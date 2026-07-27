@@ -50,6 +50,34 @@ Flow City es un city-tycoon de logística, gestión y automatización: el jugado
 - Estación = 3 meses (otoño, invierno, primavera, verano), con impacto propio en clima y por tanto en producción.
 - Año = 12 meses.
 
+**Niveles (S/M/L)**
+- Toda construcción y toda ruta tiene un nivel: S (básico), M, L. Subir de nivel mejora la capacidad propia de ese tipo: los cultivos producen más, las rutas toleran más saturación y pueden cambiar de plano de elevación (ver más abajo), las fábricas producen más o requieren menos insumo, las casas alojan más población, los comercios atienden y venden más.
+- Construir en un nivel más alto cuesta más dinero (S < M < L). Una construcción o ruta ya existente puede mejorarse de nivel pagando la diferencia de costo; nunca se puede degradar de nivel.
+
+**Footprint vs. área de acción**
+- Son dos conceptos distintos: el footprint es el conjunto de celdas que una construcción ocupa físicamente; el área de acción es el conjunto de celdas donde esa construcción actúa sin ocuparlas (un radio, igual en naturaleza a la zona de influencia del centro cívico).
+- Para la mayoría de construcciones (reforestación, tala, granjas, centro cívico) el footprint se mantiene igual en los tres niveles; lo que crece con el nivel es el área de acción.
+- Las casas son la excepción: su footprint crece con el nivel (por ejemplo S=2x2, M=3x2, L=3x3 celdas), y junto con él, la población que albergan.
+
+**Terreno flexible para vivienda e industria**
+- Las construcciones no extractivas de vivienda e industria pueden construirse en cualquier tipo de terreno (verde, elevado, neutro), no solo en el ideal (neutro), sacrificando el uso especializado que esa celda podría haber tenido (cultivo, minería). La única restricción dura: ninguna construcción no acuática puede ir sobre agua profunda.
+
+**Ciclo de vida de árboles**
+- Cada celda dentro del área de acción de un nodo de reforestación o de tala tiene un estado de árbol: Árbol (maduro, cosechable) → Tocón (recién talado) → Limpio (listo para replantar) → vuelve a convertirse en Árbol con el tiempo.
+- El nodo de tala solo puede producir madera si existe al menos una celda en estado Árbol dentro de su área de acción; al cosechar, esa celda pasa a Tocón. El nodo de reforestación es quien, con el tiempo, hace que las celdas Limpias vuelvan a convertirse en Árbol dentro de su propia área de acción.
+
+**Elevación y niveles de ruta**
+- El terreno tiene planos de elevación (terreno elevado, frente al resto). Las rutas terrestres (carretera) nunca pueden cruzar agua profunda; las rutas marítimas nunca pueden cruzar tierra.
+- Una ruta de nivel S solo conecta puntos dentro de un mismo plano de elevación; los niveles M y L permiten además cambiar de plano.
+- Subte y ferrocarril quedan exentos de esta restricción de elevación: alcanza con colocar una terminal y conectarla a la red existente.
+- Las rutas se clasifican por su distancia real (longitud del tramo) en cortas o largas; las rutas marítimas largas son las que permiten conectar con islas o continentes y acceder a recursos no disponibles en la zona inicial.
+
+**Petróleo, combustible y almacenes tipados**
+- El petróleo es un recurso infinito (mismo patrón que el agua), pero a diferencia del agua necesita refinarse (una industria más, con el mismo modelo de receta entrada→salida) antes de poder usarse en la mayoría de los casos; algunas industrias piden petróleo crudo, otras piden refinado.
+- Los almacenes que guardan petróleo no pueden compartirse con almacenes de productos orgánicos.
+- El combustible (derivado del petróleo refinado) es necesario para que circule el tráfico vehicular de carretera; su ausencia degrada ese tráfico. No afecta a subte ni a ferrocarril, ni a embarcaciones de pesca chicas/medianas; sí afecta a las rutas marítimas largas.
+- Sobre la base del petróleo se pueden definir industrias derivadas (plástico como alternativa a la madera, tapizados, neumáticos, pegamentos, pinturas), usando el mismo modelo de receta entrada→salida ya definido — son datos nuevos, no una mecánica de motor distinta.
+
 ## Por qué es un caso válido / motivación real
 
 Formaliza un sistema de simulación logística con reglas de capacidad, flujo y dependencia de recursos genuinamente complejas (no un tycoon genérico), sirviendo como caso real para ejercitar la separación dato/lógica del protocolo GAME junto con el proceso de contratos de KDD sobre un dominio que no encaja en ningún perfil existente.
@@ -78,9 +106,12 @@ alcance" terminaron resueltos en los contratos de tarea, y cuáles siguen sin re
   de diseño en los Contratos [06](specs/CONTRACT-06-poblacion.md),
   [14](specs/CONTRACT-14-gasto-tesoreria-construccion.md) y
   [16](specs/CONTRACT-16-poblacion-grid-real.md) en adelante.
-- **Sin resolver todavía**: tamaño de nodo en celdas (todo nodo construido hasta ahora ocupa
-  exactamente 1 celda), límite de conexiones por vértice, y si las rutas pueden cruzar agua
-  profunda o zonas elevadas.
+- **Resuelto (segunda ronda de diseño conceptual, ver "Capacidades objetivo" arriba)**: tamaño
+  de nodo variable (footprint) para viviendas por nivel S/M/L, y si las rutas pueden cruzar agua
+  profunda o zonas elevadas (carretera nunca sobre agua, marítima nunca sobre tierra, cambio de
+  plano de elevación solo en niveles M/L). Pendiente de construcción real en contratos de tarea,
+  no solo de diseño conceptual.
+- **Sin resolver todavía**: límite de conexiones por vértice.
 - **Fuera de alcance, confirmado durante la ejecución** (no solo pendiente de PLAN, sino
   descartado explícitamente por riesgo/alcance): combinar recetas multi-insumo y múltiples
   centros cívicos dentro de la misma cadena económica de referencia — ver

@@ -7,12 +7,16 @@ Metodología: [KDD](../KDD/) (contratos de ejecución en `specs/`, task contract
 
 ## Resumen final (2026-07-27)
 
-Proyecto sin pendientes explícitos abiertos en su roadmap acumulado. Estado verificado:
+Cerrados dos roadmaps completos sin pendientes explícitos abiertos dentro de su propio alcance:
+el primero (Contratos 01-32, motor de simulación base) y el segundo (Contratos 33-42, ver
+`DEFINITION.md`: niveles S/M/L, footprint multi-celda, terreno flexible, ciclo de vida de
+árboles, elevación/niveles de ruta, petróleo y combustible), este último ejecutado de forma
+autónoma sin pausar entre contratos. Estado verificado al último cierre:
 
-- **32 contratos de ejecución** (`specs/CONTRACT-01` a `CONTRACT-32`), todos **completos** y
+- **42 contratos de ejecución** (`specs/CONTRACT-01` a `CONTRACT-42`), todos **completos** y
   cerrados con reporte propio en `docs/reports/`.
-- **73 task contracts** CCDD en `knowledge/contracts/`, todos validados (`0 errores`).
-- **436 tests** (`node --test tests/test_*.js`), verdes en 2 corridas consecutivas para cada
+- **107 task contracts** CCDD en `knowledge/contracts/`, todos validados (`0 errores`).
+- **556 tests** (`node --test tests/test_*.js`), verdes en 2 corridas consecutivas para cada
   cierre de contrato.
 - Subsistemas cubiertos de punta a punta: grid/terreno, rutas y pathfinding (incl. viajes
   multi-tick con decisión de orquestación instantáneo-vs-tránsito), motor de tráfico por tick,
@@ -215,5 +219,80 @@ Proyecto sin pendientes explícitos abiertos en su roadmap acumulado. Estado ver
 - Pendiente (fuera de alcance deliberado): recetas multi-insumo y múltiples centros cívicos
   combinados en una cadena económica completa — subsistemas estructuralmente disjuntos, no
   integrados con la referencia ampliada.
-- Suite: `node --test tests/test_*.js` — 436/436 verde.
-- Gate: `python scripts/validate_contracts.py knowledge/contracts` — 0 errores, 73 contratos.
+- Cerrado el primer roadmap sin pendientes explícitos conocidos (Contratos 01-32).
+
+### Segunda ronda: niveles, footprint, árboles, elevación, petróleo (en curso, ejecución autónoma)
+
+- `specs/CONTRACT-33-terreno-flexible-residencial-industrial.md` — **completo** (implementado
+  por `pool` — Poolside CLI). Ver
+  [docs/reports/CONTRACT-33-REPORT.md](docs/reports/CONTRACT-33-REPORT.md). Introduce las
+  categorías `residencial`/`industrial`: pueden construirse en cualquier terreno excepto agua
+  profunda, vía un gate aditivo nuevo que nunca reemplaza a `puedeConstruir` para las categorías
+  existentes.
+  - T1 `puede-construir-flexible`, T2 `asignar-nodo-celda`, T3 `colocar-nodo-flexible`.
+- `specs/CONTRACT-34-footprint-viviendas-por-nivel.md` — **completo** (implementado por `pool`
+  — Poolside CLI). Ver [docs/reports/CONTRACT-34-REPORT.md](docs/reports/CONTRACT-34-REPORT.md).
+  Las casas son la única construcción cuyo footprint crece con el nivel (S=2x2, M=3x2, L=3x3),
+  colocado de forma atómica (dos pasadas, sin rollback) reusando el terreno flexible del
+  Contrato 33.
+  - T1 `celdas-de-casa-por-nivel`, T2 `calcular-capacidad-poblacion-casa-por-nivel`, T3
+    `colocar-casa-multi-celda`.
+- `specs/CONTRACT-35-nivel-de-granja.md` — **completo** (implementado por `pool` — Poolside
+  CLI). Ver [docs/reports/CONTRACT-35-REPORT.md](docs/reports/CONTRACT-35-REPORT.md). Con la
+  misma agua recibida, una granja produce más manzanas (y cuesta más construir) cuanto más alto
+  es su nivel: `8/16/24` manzanas y `30/50/80` de costo para `S/M/L`.
+  - T1 `calcular-factor-rendimiento-granja-por-nivel`, T2
+    `calcular-costo-construccion-granja-por-nivel`, T3 `ejecutar-produccion-granja-por-nivel`.
+- `specs/CONTRACT-36-area-de-accion-por-nivel.md` — **completo** (implementado por `pool` —
+  Poolside CLI). Ver [docs/reports/CONTRACT-36-REPORT.md](docs/reports/CONTRACT-36-REPORT.md).
+  Única tabla del roadmap de niveles deliberadamente compartida entre dominios: el radio de área
+  de acción (`{S:2, M:3, L:4}`), reusado directo con `estaEnZonaInfluencia`, coincide siempre
+  entre reforestación y tala.
+  - T1 `radio-area-accion-por-nivel`, T2 `ejecutar-area-accion-por-nivel`.
+- `specs/CONTRACT-37-ciclo-de-vida-del-arbol.md` — **completo** (implementado por `pool` —
+  Poolside CLI). Ver [docs/reports/CONTRACT-37-REPORT.md](docs/reports/CONTRACT-37-REPORT.md).
+  Cada celda tiene un estado Árbol/Tocón/Limpio en un `Map` aparte del grid; tala es siempre
+  acción explícita, Tocón→Limpio y Limpio→Árbol son automáticos por tiempo (2 y 3 ticks).
+  - T1 `crear-estado-arboles`, T2 `talar-arbol`, T3 `avanzar-ciclo-arbol-tick`, T4
+    `tala-produce-en-zona`.
+- `specs/CONTRACT-38-integracion-tala-reforestacion-con-nivel.md` — **completo** (implementado
+  por `pool` — Poolside CLI). Ver
+  [docs/reports/CONTRACT-38-REPORT.md](docs/reports/CONTRACT-38-REPORT.md). Cierra el ciclo:
+  área de acción por nivel + ciclo de vida del árbol combinados — tala en el tick 0, silencio 4
+  ticks mientras regenera, segunda tala en el tick 5.
+  - T1 `ejecutar-cadena-tala-reforestacion-con-nivel`.
+- `specs/CONTRACT-39-elevacion-terreno-rutas.md` — **completo** (implementado por `pool` —
+  Poolside CLI). Ver [docs/reports/CONTRACT-39-REPORT.md](docs/reports/CONTRACT-39-REPORT.md).
+  Carretera nunca cruza agua, marítima nunca cruza tierra, ferrocarril/subte exentos; nivel S no
+  puede cambiar de plano de elevación, M/L sí. El plano se deriva directo del terreno, sin
+  estado nuevo por celda.
+  - T1 `plano-de-terreno`, T2 `ruta-cruza-terreno-valido`, T3 `ruta-puede-cambiar-plano`, T4
+    `ejecutar-conexion-ruta-con-elevacion`.
+- `specs/CONTRACT-40-rutas-escaladas-por-nivel.md` — **completo** (implementado por `pool` —
+  Poolside CLI). Ver [docs/reports/CONTRACT-40-REPORT.md](docs/reports/CONTRACT-40-REPORT.md).
+  Capacidad de ruta escalada por nivel (`10/20/30` sobre base `10`), costo de construcción
+  creciente (`20/40/70`), y mejora pagando solo la diferencia — degradar siempre lanza error.
+  - T1 `calcular-tolerancia-saturacion-ruta-por-nivel`, T2 `crear-tramo-con-nivel`, T3
+    `calcular-costo-construccion-ruta-por-nivel`, T4 `calcular-costo-mejora-nivel-ruta`, T5
+    `ejecutar-ruta-escalada-por-nivel`.
+- `specs/CONTRACT-41-petroleo-refinería-almacen-tipado.md` — **completo** (implementado por
+  `pool` — Poolside CLI). Ver
+  [docs/reports/CONTRACT-41-REPORT.md](docs/reports/CONTRACT-41-REPORT.md). Extracción y
+  refinería reusan `crearNodoProductivo` tal cual (solo nuevos datos); almacén de petróleo
+  dedicado (crudo/refinado, gemelo de `crearAlmacen`), incompatible con almacenes orgánicos.
+  - T1 `crear-almacen-petroleo`, T2 `agregar-stock-almacen-petroleo`, T3
+    `retirar-stock-almacen-petroleo`, T4 `es-almacen-incompatible`, T5
+    `ejecutar-extraccion-refino-petroleo`.
+- `specs/CONTRACT-42-combustible-trafico-degradado.md` — **completo** (implementado por `pool`
+  — Poolside CLI). Ver [docs/reports/CONTRACT-42-REPORT.md](docs/reports/CONTRACT-42-REPORT.md).
+  Cierra el roadmap 33-42: combustible degrada linealmente el tráfico de carretera y de
+  marítima larga; subte, ferrocarril y marítima corta quedan exentos.
+  - T1 `clasificar-longitud-ruta`, T2 `tramo-requiere-combustible`, T3
+    `aplicar-escasez-combustible-tramo`, T4 `ejecutar-trafico-con-combustible`.
+- **Roadmap 33-42 completo** (10 contratos de ejecución, ejecutados de forma autónoma sin
+  pausar entre ellos): niveles S/M/L, footprint de viviendas, ciclo de vida de árboles,
+  elevación/terreno de rutas, petróleo/almacén tipado, combustible. Pendiente (fuera de
+  alcance de este roadmap, por diseño): combinar estas mecánicas en una integración conjunta
+  real; industrias derivadas de petróleo (datos, no motor).
+- Suite: `node --test tests/test_*.js` — 556/556 verde.
+- Gate: `python scripts/validate_contracts.py knowledge/contracts` — 0 errores, 107 contratos.
