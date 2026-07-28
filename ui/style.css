@@ -59,11 +59,18 @@ h1 {
   width: 40px;
   height: 40px;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   font-size: 9px;
   cursor: pointer;
   user-select: none;
+  line-height: 1.1;
+}
+
+.celda .stock {
+  font-size: 7px;
+  opacity: 0.85;
 }
 
 .celda:hover { outline: 2px solid #fff; outline-offset: -2px; }

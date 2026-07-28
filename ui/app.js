@@ -5,6 +5,10 @@ window.onCjsReady = function () {
   var colocarNodoFlexible = window.__cjs['colocarNodoFlexible'].colocarNodoFlexible;
   var colocarCasaMultiCelda = window.__cjs['colocarCasaMultiCelda'].colocarCasaMultiCelda;
   var crearNodoProductivo = window.__cjs['crearNodoProductivo'].crearNodoProductivo;
+  var crearAlmacen = window.__cjs['crearAlmacen'].crearAlmacen;
+  var agregarStockAlmacen = window.__cjs['agregarStockAlmacen'].agregarStockAlmacen;
+  var retirarStockAlmacen = window.__cjs['retirarStockAlmacen'].retirarStockAlmacen;
+  var producirTickNodoConAlmacen = window.__cjs['producirTickNodoConAlmacen'].producirTickNodoConAlmacen;
   var verticeEntrada = window.__cjs['verticeEntrada'].verticeEntrada;
   var crearTramo = window.__cjs['crearTramo'].crearTramo;
   var conectarVertices = window.__cjs['conectarVertices'].conectarVertices;
@@ -33,6 +37,8 @@ window.onCjsReady = function () {
   var categoriasReceta = { agricultura: true, reforestacion: true, no_extractiva: true };
   var categoriasExtraccion = { mineria: true, pesca: true };
   var categoriasFlexibles = { residencial: true, industrial: true };
+  var categoriasProductivas = { agricultura: true, reforestacion: true, no_extractiva: true, mineria: true, pesca: true };
+  var CAPACIDAD_ALMACEN = 50; // ad hoc, misma capacidad para materia prima y producto
 
   var grafo = {};
   var nodosColocados = []; // { x, y, categoria, vertice, etiqueta }
@@ -57,6 +63,7 @@ window.onCjsReady = function () {
   var tipoTraficoViajeEl = document.getElementById('tipoTraficoViaje');
   var cantidadViajeEl = document.getElementById('cantidadViaje');
   var enviarViajeBtn = document.getElementById('enviarViaje');
+  var avanzarTickProduccionBtn = document.getElementById('avanzarTickProduccion');
 
   gridEl.style.gridTemplateColumns = 'repeat(' + ANCHO + ', ' + TAM + 'px)';
   overlayEl.setAttribute('width', ANCHO * TAM);
@@ -97,9 +104,19 @@ window.onCjsReady = function () {
     var vertice = verticeEntrada(x, y, 'sur');
     var etiqueta = categoria + ' (' + x + ',' + y + ')';
     var info = { x: x, y: y, categoria: categoria, vertice: vertice, etiqueta: etiqueta };
+    if (categoriasProductivas[categoria]) {
+      info.almacen = crearAlmacen(CAPACIDAD_ALMACEN, CAPACIDAD_ALMACEN);
+    }
     nodosColocados.push(info);
     actualizarSelectsViaje();
     return info;
+  }
+
+  function nodoPorVertice(vertice) {
+    for (var i = 0; i < nodosColocados.length; i += 1) {
+      if (nodosColocados[i].vertice === vertice) return nodosColocados[i];
+    }
+    return null;
   }
 
   function actualizarSelectsViaje() {
@@ -130,8 +147,17 @@ window.onCjsReady = function () {
         div.dataset.x = x;
         div.dataset.y = y;
         if (celda.nodo) {
-          div.textContent = celda.nodo.categoria.slice(0, 3);
-          div.title = JSON.stringify(celda.nodo);
+          var etq = document.createElement('div');
+          etq.textContent = celda.nodo.categoria.slice(0, 3);
+          div.appendChild(etq);
+          var nodoInfo = nodoPorVertice(verticeEntrada(x, y, 'sur'));
+          if (nodoInfo && nodoInfo.almacen) {
+            var stockDiv = document.createElement('div');
+            stockDiv.className = 'stock';
+            stockDiv.textContent = nodoInfo.almacen.stockMateriaPrima + '/' + nodoInfo.almacen.stockProducto;
+            div.appendChild(stockDiv);
+          }
+          div.title = JSON.stringify(celda.nodo) + (nodoInfo && nodoInfo.almacen ? ' | almacen: ' + JSON.stringify(nodoInfo.almacen) : '');
         }
         gridEl.appendChild(div);
       }
@@ -280,6 +306,29 @@ window.onCjsReady = function () {
     }
   });
 
+  avanzarTickProduccionBtn.addEventListener('click', function () {
+    var resumen = [];
+    nodosColocados.forEach(function (info) {
+      if (!info.almacen) return;
+      var nodo = obtenerCelda(grid, info.x, info.y).nodo;
+      var entradaRecibida = 0;
+      if (nodo.ratioEntrada !== null && info.almacen.stockMateriaPrima > 0) {
+        entradaRecibida = retirarStockAlmacen(info.almacen, 'materiaPrima', info.almacen.stockMateriaPrima);
+      }
+      var resultado = producirTickNodoConAlmacen(nodo, info.almacen, entradaRecibida);
+      if (resultado.almacenLleno) {
+        resumen.push(info.etiqueta + ': almacen de producto lleno, produccion perdida');
+      } else {
+        resumen.push(info.etiqueta + ': +' + resultado.producido);
+      }
+    });
+    mostrarMensaje(
+      resumen.length > 0 ? 'Tick de produccion -> ' + resumen.join(' | ') : 'No hay nodos productivos colocados',
+      false
+    );
+    render();
+  });
+
   enviarViajeBtn.addEventListener('click', function () {
     if (viajeActivo) {
       mostrarMensaje('Ya hay un viaje en transito, esperá a que llegue', true);
@@ -297,6 +346,28 @@ window.onCjsReady = function () {
       mostrarMensaje('Error: origen y destino no pueden ser el mismo', true);
       return;
     }
+    if (!Number.isInteger(cantidad) || cantidad <= 0) {
+      mostrarMensaje('Error: cantidad debe ser un entero positivo', true);
+      return;
+    }
+
+    var origenInfo = nodoPorVertice(verticeOrigen);
+    var destinoInfo = nodoPorVertice(verticeDestino);
+
+    // Si el origen tiene almacen (nodo productivo), el viaje transporta
+    // produccion real: no se puede enviar mas de lo que hay en stock, y se
+    // retira del almacen al DESPACHAR (no al llegar), para no contabilizar
+    // dos veces si el viaje es multi-tick.
+    if (origenInfo && origenInfo.almacen) {
+      if (cantidad > origenInfo.almacen.stockProducto) {
+        mostrarMensaje(
+          'Error: stock insuficiente en ' + origenInfo.etiqueta +
+            ' (disponible: ' + origenInfo.almacen.stockProducto + ')',
+          true
+        );
+        return;
+      }
+    }
 
     try {
       var ruta = encontrarRuta(grafo, verticeOrigen, verticeDestino, tipoTrafico);
@@ -305,12 +376,25 @@ window.onCjsReady = function () {
         return;
       }
 
+      if (origenInfo && origenInfo.almacen) {
+        retirarStockAlmacen(origenInfo.almacen, 'producto', cantidad);
+      }
+
+      function entregarEnDestino(entregado) {
+        if (destinoInfo && destinoInfo.almacen) {
+          var entero = Math.floor(entregado);
+          if (entero > 0) agregarStockAlmacen(destinoInfo.almacen, 'materiaPrima', entero);
+        }
+        render();
+      }
+
       var ticks = calcularTicksViaje(ruta.distanciaTotal, VELOCIDAD_BASE);
 
       if (ticks <= 1) {
         var resultado = resolverViaje(grafo, verticeOrigen, verticeDestino, tipoTrafico, cantidad);
         var pDestino = pixelDeVertice(verticeDestino);
         dibujarToken(pDestino.x, pDestino.y);
+        entregarEnDestino(resultado.entregado);
         mostrarMensaje(
           'OK: viaje instantaneo. Entregado: ' + resultado.entregado.toFixed(2) +
             ' (factor velocidad: ' + resultado.factorVelocidadMinimo.toFixed(2) + ')',
@@ -332,6 +416,7 @@ window.onCjsReady = function () {
             viajeActivo = null;
             var pFinal = pixelDeVertice(verticeDestino);
             dibujarToken(pFinal.x, pFinal.y);
+            entregarEnDestino(resultadoTick.llegados[0].entregado);
             mostrarMensaje('OK: viaje llego. Entregado: ' + resultadoTick.llegados[0].entregado.toFixed(2), false);
             setTimeout(quitarToken, 800);
             return;
@@ -348,6 +433,7 @@ window.onCjsReady = function () {
       }, TICK_MS);
 
       viajeActivo = { intervalId: intervalId };
+      render();
     } catch (error) {
       mostrarMensaje('Error: ' + error.message, true);
     }

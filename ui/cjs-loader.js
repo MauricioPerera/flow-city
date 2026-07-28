@@ -32,6 +32,13 @@ var MODULOS_REQUERIDOS = [
   'colocarNodoFlexible.js',
   'colocarCasaMultiCelda.js',
   'crearNodoProductivo.js',
+  // Produccion por tick y almacenes (Contratos 09/10/11)
+  'calcularProduccion.js',
+  'producirTickNodo.js',
+  'crearAlmacen.js',
+  'agregarStockAlmacen.js',
+  'retirarStockAlmacen.js',
+  'producirTickNodoConAlmacen.js',
   // Rutas y trafico (Contratos 03/04/08)
   'idVertice.js',
   'verticesDeCelda.js',
