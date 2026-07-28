@@ -45,6 +45,11 @@ var MODULOS_REQUERIDOS = [
   'registrarIngreso.js',
   'calcularMontoVenta.js',
   'resolverCompraAlmacen.js',
+  // Poblacion dinamica (Contratos 06/34)
+  'calcularCapacidadPoblacionCasaPorNivel.js',
+  'calcularCoberturaNecesidad.js',
+  'combinarCoberturas.js',
+  'calcularCrecimientoPoblacion.js',
   // Rutas y trafico (Contratos 03/04/08)
   'idVertice.js',
   'verticesDeCelda.js',

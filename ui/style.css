@@ -28,6 +28,7 @@ h1 {
 
 .saldo { font-weight: bold; color: #ffd54f; }
 .costo { color: #bdbdbd; font-size: 13px; }
+.poblacion { font-weight: bold; color: #81d4fa; }
 
 #gridWrap {
   position: relative;

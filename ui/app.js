@@ -14,6 +14,10 @@ window.onCjsReady = function () {
   var registrarIngreso = window.__cjs['registrarIngreso'].registrarIngreso;
   var calcularMontoVenta = window.__cjs['calcularMontoVenta'].calcularMontoVenta;
   var resolverCompraAlmacen = window.__cjs['resolverCompraAlmacen'].resolverCompraAlmacen;
+  var calcularCapacidadPoblacionCasaPorNivel = window.__cjs['calcularCapacidadPoblacionCasaPorNivel'].calcularCapacidadPoblacionCasaPorNivel;
+  var calcularCoberturaNecesidad = window.__cjs['calcularCoberturaNecesidad'].calcularCoberturaNecesidad;
+  var combinarCoberturas = window.__cjs['combinarCoberturas'].combinarCoberturas;
+  var calcularCrecimientoPoblacion = window.__cjs['calcularCrecimientoPoblacion'].calcularCrecimientoPoblacion;
   var verticeEntrada = window.__cjs['verticeEntrada'].verticeEntrada;
   var crearTramo = window.__cjs['crearTramo'].crearTramo;
   var conectarVertices = window.__cjs['conectarVertices'].conectarVertices;
@@ -64,7 +68,36 @@ window.onCjsReady = function () {
   var CAPACIDAD_COMPRA_COMERCIO = 5; // ad hoc, unidades vendidas por nodo por tick
   var SALDO_INICIAL = 100; // ad hoc
 
+  // Poblacion: no hay categoria "extraccion-agua" en esta UI (el patron
+  // bomba->granja de los Contratos 09/17/25 usa esa categoria, que no existe
+  // en el vocabulario de puedeConstruir.js/puedeConstruirFlexible.js de esta
+  // UI). Convencion ad hoc, documentada: 'pesca' cubre la necesidad de agua,
+  // 'agricultura' cubre la necesidad de comida. Ambas son categorias que el
+  // jugador ya puede construir.
+  var categoriasVivienda = { residencial: true, casa: true };
+  var CATEGORIA_AGUA = 'pesca';
+  var CATEGORIA_COMIDA = 'agricultura';
+  var NECESIDAD_PER_CAPITA = 0.2; // mismo valor ad hoc que ejecutarCadenaPoblacionDinamica.js
+  // ad hoc, mas alta que en los ejecutores de referencia (que usan poblaciones
+  // de 10+): con capacidades de vivienda de esta UI (4-9), calcularCrecimientoPoblacion
+  // aplicada por-vivienda con tasas bajas nunca redondea hacia +1 (Math.floor
+  // asimetrico) y la poblacion solo podria encoger, nunca recuperarse. Por eso
+  // el crecimiento se calcula sobre el TOTAL de la ciudad (ver mas abajo), no
+  // por vivienda, y con una tasa mayor para que sea visible a esta escala.
+  var TASA_BASE_POBLACION = 0.3;
+  var POBLACION_RESIDENCIAL_FIJA = 4; // ad hoc, equivale a una casa nivel S
+
   var tesoreria = crearTesoreria(SALDO_INICIAL);
+
+  // Acumulador de fraccion de poblacion: calcularCrecimientoPoblacion.js
+  // devuelve un numero crudo sin redondear; truncarlo a entero CADA tick
+  // (como hacen los ejecutores de referencia, ej. ejecutarCadenaPoblacionDinamica.js)
+  // funciona con las poblaciones grandes (10+) de esos demos, pero con las
+  // capacidades chicas de esta UI (4-9) un cambio tipico de +0.3/tick se
+  // descarta entero cada vez y la poblacion queda atascada para siempre,
+  // aun con cobertura 100% (verificado a mano). Se acumula la fraccion entre
+  // ticks y solo se aplica el cambio entero cuando cruza un umbral.
+  var poblacionFraccionAcumulada = 0;
 
   function costoDeCategoria(categoria) {
     if (categoria === 'casa') return COSTO_CASA_POR_NIVEL[nivelCasaEl.value];
@@ -95,8 +128,10 @@ window.onCjsReady = function () {
   var cantidadViajeEl = document.getElementById('cantidadViaje');
   var enviarViajeBtn = document.getElementById('enviarViaje');
   var avanzarTickProduccionBtn = document.getElementById('avanzarTickProduccion');
+  var venderProduccionBtn = document.getElementById('venderProduccion');
   var saldoEl = document.getElementById('saldo');
   var costoConstruccionEl = document.getElementById('costoConstruccion');
+  var poblacionTotalEl = document.getElementById('poblacionTotal');
 
   gridEl.style.gridTemplateColumns = 'repeat(' + ANCHO + ', ' + TAM + 'px)';
   overlayEl.setAttribute('width', ANCHO * TAM);
@@ -141,16 +176,32 @@ window.onCjsReady = function () {
     costoConstruccionEl.textContent = 'Costo: $' + costoDeCategoria(categoriaEl.value);
   }
 
-  function registrarNodoColocado(x, y, categoria) {
+  function registrarNodoColocado(x, y, categoria, nivel) {
     var vertice = verticeEntrada(x, y, 'sur');
     var etiqueta = categoria + ' (' + x + ',' + y + ')';
     var info = { x: x, y: y, categoria: categoria, vertice: vertice, etiqueta: etiqueta };
     if (categoriasProductivas[categoria]) {
       info.almacen = crearAlmacen(CAPACIDAD_ALMACEN, CAPACIDAD_ALMACEN);
     }
+    if (categoriasVivienda[categoria]) {
+      info.poblacionMax = categoria === 'casa' ? calcularCapacidadPoblacionCasaPorNivel(nivel) : POBLACION_RESIDENCIAL_FIJA;
+      info.poblacion = info.poblacionMax; // arranca ocupada al construirse (decision ad hoc)
+    }
     nodosColocados.push(info);
     actualizarSelectsViaje();
     return info;
+  }
+
+  function poblacionTotal() {
+    var total = 0;
+    nodosColocados.forEach(function (info) {
+      if (info.poblacion !== undefined) total += info.poblacion;
+    });
+    return total;
+  }
+
+  function renderPoblacion() {
+    poblacionTotalEl.textContent = 'Población: ' + poblacionTotal();
   }
 
   function nodoPorVertice(vertice) {
@@ -197,6 +248,12 @@ window.onCjsReady = function () {
             stockDiv.className = 'stock';
             stockDiv.textContent = nodoInfo.almacen.stockMateriaPrima + '/' + nodoInfo.almacen.stockProducto;
             div.appendChild(stockDiv);
+          }
+          if (nodoInfo && nodoInfo.poblacion !== undefined) {
+            var pobDiv = document.createElement('div');
+            pobDiv.className = 'stock';
+            pobDiv.textContent = nodoInfo.poblacion + '/' + nodoInfo.poblacionMax;
+            div.appendChild(pobDiv);
           }
           div.title = JSON.stringify(celda.nodo) + (nodoInfo && nodoInfo.almacen ? ' | almacen: ' + JSON.stringify(nodoInfo.almacen) : '');
         }
@@ -280,9 +337,10 @@ window.onCjsReady = function () {
       } else {
         colocarNodo(grid, x, y, categoria, nodo);
       }
-      registrarNodoColocado(x, y, categoria);
+      registrarNodoColocado(x, y, categoria, nivelCasaEl.value);
       registrarGasto(tesoreria, costo);
       renderSaldo();
+      renderPoblacion();
       mostrarMensaje('OK: ' + categoria + ' colocado en (' + x + ', ' + y + '), costo $' + costo, false);
     } catch (error) {
       mostrarMensaje('Error: ' + error.message, true);
@@ -359,6 +417,8 @@ window.onCjsReady = function () {
 
   avanzarTickProduccionBtn.addEventListener('click', function () {
     var resumen = [];
+
+    // Fase 1: produccion (igual que antes).
     nodosColocados.forEach(function (info) {
       if (!info.almacen) return;
       var nodo = obtenerCelda(grid, info.x, info.y).nodo;
@@ -372,25 +432,103 @@ window.onCjsReady = function () {
       } else {
         resumen.push(info.etiqueta + ': +' + resultado.producido);
       }
-
-      // Comercio: mismo patron que ejecutarCadenaBombaGranjaComercio.js
-      // (Contrato 12) - vende hasta CAPACIDAD_COMPRA_COMERCIO del stock
-      // acumulado, al precio ad hoc de la categoria.
-      if (info.almacen.stockProducto > 0) {
-        var vendido = resolverCompraAlmacen(info.almacen.stockProducto, CAPACIDAD_COMPRA_COMERCIO);
-        if (vendido > 0) {
-          retirarStockAlmacen(info.almacen, 'producto', vendido);
-          var monto = calcularMontoVenta(vendido, PRECIO_UNITARIO[info.categoria]);
-          registrarIngreso(tesoreria, monto);
-          resumen.push(info.etiqueta + ': vendio ' + vendido + ' por $' + monto.toFixed(2));
-        }
-      }
     });
+
+    // Fase 2: poblacion consume PRIMERO (mismo orden que
+    // ejecutarCadenaConPoblacionReal.js / ejecutarCadenaPoblacionDinamica.js:
+    // "poblacion primero", el remanente sigue a comercio en la fase 3).
+    // Alcance ad hoc de esta UI (sin centro civico/zona de influencia
+    // todavia): el consumo es una bolsa unica a nivel ciudad, no por ruta.
+    var poblacionCiudad = poblacionTotal();
+    var aguaRequerida = poblacionCiudad * NECESIDAD_PER_CAPITA;
+    var comidaRequerida = poblacionCiudad * NECESIDAD_PER_CAPITA;
+
+    function consumirDeCategoria(categoria, requerido) {
+      var disponible = 0;
+      nodosColocados.forEach(function (info) {
+        if (info.categoria === categoria && info.almacen) disponible += info.almacen.stockProducto;
+      });
+      var recibido = Math.min(requerido, disponible);
+      var porRetirar = Math.floor(recibido);
+      nodosColocados.forEach(function (info) {
+        if (porRetirar <= 0) return;
+        if (info.categoria === categoria && info.almacen && info.almacen.stockProducto > 0) {
+          var tomar = Math.min(porRetirar, info.almacen.stockProducto);
+          retirarStockAlmacen(info.almacen, 'producto', tomar);
+          porRetirar -= tomar;
+        }
+      });
+      return recibido;
+    }
+
+    var aguaRecibida = consumirDeCategoria(CATEGORIA_AGUA, aguaRequerida);
+    var comidaRecibida = consumirDeCategoria(CATEGORIA_COMIDA, comidaRequerida);
+    var coberturaAgua = calcularCoberturaNecesidad(aguaRequerida, aguaRecibida);
+    var coberturaComida = calcularCoberturaNecesidad(comidaRequerida, comidaRecibida);
+    var indiceCobertura = combinarCoberturas([coberturaAgua, coberturaComida]);
+
+    // El crecimiento se calcula sobre el TOTAL de la ciudad (no por vivienda,
+    // ver nota en TASA_BASE_POBLACION mas arriba) y se distribuye de a una
+    // unidad por vivienda con lugar/habitantes disponibles. No hay regla de
+    // distribucion en src/ (sus ejecutores de referencia modelan poblacion
+    // agregada, nunca mas de una vivienda) - orden de array, decision ad hoc.
+    var crudoCiudad = calcularCrecimientoPoblacion(poblacionCiudad, indiceCobertura, TASA_BASE_POBLACION);
+    poblacionFraccionAcumulada += crudoCiudad;
+    var cambioTotal = Math.trunc(poblacionFraccionAcumulada);
+    poblacionFraccionAcumulada -= cambioTotal;
+    var viviendas = nodosColocados.filter(function (info) { return info.poblacion !== undefined; });
+    var restante = cambioTotal;
+    var cambioAplicado = 0;
+    while (restante > 0) {
+      var conLugar = viviendas.filter(function (v) { return v.poblacion < v.poblacionMax; })[0];
+      if (!conLugar) break;
+      conLugar.poblacion += 1;
+      restante -= 1;
+      cambioAplicado += 1;
+    }
+    while (restante < 0) {
+      var conHabitantes = viviendas.filter(function (v) { return v.poblacion > 0; })[0];
+      if (!conHabitantes) break;
+      conHabitantes.poblacion -= 1;
+      restante += 1;
+      cambioAplicado -= 1;
+    }
+
+    if (poblacionCiudad > 0) {
+      resumen.push(
+        'poblacion: cobertura agua ' + (coberturaAgua * 100).toFixed(0) + '% / comida ' +
+          (coberturaComida * 100).toFixed(0) + '% -> indice ' + indiceCobertura.toFixed(2) +
+          ', cambio ' + (cambioAplicado >= 0 ? '+' : '') + cambioAplicado
+      );
+    }
+
     renderSaldo();
+    renderPoblacion();
     mostrarMensaje(
       resumen.length > 0 ? 'Tick de produccion -> ' + resumen.join(' | ') : 'No hay nodos productivos colocados',
       false
     );
+    render();
+  });
+
+  venderProduccionBtn.addEventListener('click', function () {
+    // Comercio como accion explicita del jugador (no automatica dentro del
+    // tick): asi el stock puede acumularse y tambien enviarse por ruta a
+    // otro nodo (modo 'viaje') antes de decidir vender. Mismo patron de
+    // calculo que ejecutarCadenaBombaGranjaComercio.js (Contrato 12).
+    var resumen = [];
+    nodosColocados.forEach(function (info) {
+      if (!info.almacen || info.almacen.stockProducto <= 0) return;
+      var vendido = resolverCompraAlmacen(info.almacen.stockProducto, CAPACIDAD_COMPRA_COMERCIO);
+      if (vendido > 0) {
+        retirarStockAlmacen(info.almacen, 'producto', vendido);
+        var monto = calcularMontoVenta(vendido, PRECIO_UNITARIO[info.categoria]);
+        registrarIngreso(tesoreria, monto);
+        resumen.push(info.etiqueta + ': vendio ' + vendido + ' por $' + monto.toFixed(2));
+      }
+    });
+    renderSaldo();
+    mostrarMensaje(resumen.length > 0 ? 'Venta -> ' + resumen.join(' | ') : 'No hay stock para vender', false);
     render();
   });
 
@@ -508,4 +646,5 @@ window.onCjsReady = function () {
   dibujarOverlay();
   renderSaldo();
   renderCosto();
+  renderPoblacion();
 };
