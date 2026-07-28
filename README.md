@@ -1,5 +1,7 @@
 # Flow City
 
+Repo: https://github.com/MauricioPerera/flow-city
+
 City-tycoon de logística, gestión y automatización — ver [DEFINITION.md](DEFINITION.md).
 
 Metodología: [KDD](../KDD/) (contratos de ejecución en `specs/`, task contracts CCDD en
