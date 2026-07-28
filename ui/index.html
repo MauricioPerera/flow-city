@@ -6,9 +6,18 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Flow City — grid clickeable (mínimo)</h1>
+<h1>Flow City — grid, rutas y tráfico (mínimo)</h1>
 
 <div class="toolbar">
+  <label for="modo">Modo:</label>
+  <select id="modo">
+    <option value="construir">Construir</option>
+    <option value="ruta">Conectar ruta</option>
+    <option value="viaje">Enviar viaje</option>
+  </select>
+</div>
+
+<div class="toolbar" id="panelConstruir">
   <label for="categoria">Categoría:</label>
   <select id="categoria">
     <option value="agricultura">agricultura</option>
@@ -30,8 +39,40 @@
   </span>
 </div>
 
+<div class="toolbar" id="panelRuta" style="display:none">
+  <label for="tipoRuta">Tipo:</label>
+  <select id="tipoRuta">
+    <option value="carretera">carretera</option>
+    <option value="ferrocarril">ferrocarril</option>
+    <option value="maritima">maritima</option>
+    <option value="subte">subte</option>
+  </select>
+  <label for="capacidadRuta">Capacidad:</label>
+  <input type="number" id="capacidadRuta" value="10" min="1" style="width:60px">
+  <span id="rutaEstado"></span>
+</div>
+
+<div class="toolbar" id="panelViaje" style="display:none">
+  <label for="origenViaje">Origen:</label>
+  <select id="origenViaje"></select>
+  <label for="destinoViaje">Destino:</label>
+  <select id="destinoViaje"></select>
+  <label for="tipoTraficoViaje">Tráfico:</label>
+  <select id="tipoTraficoViaje">
+    <option value="mercaderia">mercaderia</option>
+    <option value="personas">personas</option>
+  </select>
+  <label for="cantidadViaje">Cantidad:</label>
+  <input type="number" id="cantidadViaje" value="10" min="1" style="width:60px">
+  <button id="enviarViaje">Enviar</button>
+</div>
+
 <div id="mensaje"></div>
-<div id="grid"></div>
+
+<div id="gridWrap">
+  <div id="grid"></div>
+  <svg id="overlay"></svg>
+</div>
 
 <script src="cjs-loader.js"></script>
 <script src="app.js"></script>

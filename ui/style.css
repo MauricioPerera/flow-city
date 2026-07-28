@@ -26,12 +26,34 @@ h1 {
 #mensaje.ok { color: #6fd66f; }
 #mensaje.error { color: #ff6b6b; }
 
+#gridWrap {
+  position: relative;
+  width: max-content;
+}
+
 #grid {
   display: grid;
   gap: 1px;
   background: #000;
   width: max-content;
+  position: relative;
 }
+
+#overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.ruta-carretera { stroke: #ffd54f; }
+.ruta-ferrocarril { stroke: #bdbdbd; }
+.ruta-maritima { stroke: #4fc3f7; }
+.ruta-subte { stroke: #ce93d8; }
+
+.celda.origen-ruta { outline: 2px solid #ffd54f; outline-offset: -2px; }
+
+#token-viaje { fill: #ff3d00; }
 
 .celda {
   width: 40px;

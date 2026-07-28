@@ -32,6 +32,21 @@ var MODULOS_REQUERIDOS = [
   'colocarNodoFlexible.js',
   'colocarCasaMultiCelda.js',
   'crearNodoProductivo.js',
+  // Rutas y trafico (Contratos 03/04/08)
+  'idVertice.js',
+  'verticesDeCelda.js',
+  'verticeEntrada.js',
+  'crearTramo.js',
+  'tramoAdmiteTrafico.js',
+  'conectarVertices.js',
+  'calcularSaturacion.js',
+  'registrarCargaTramo.js',
+  'encontrarRuta.js',
+  'resolverViaje.js',
+  'calcularTicksViaje.js',
+  'iniciarViajeEnTransito.js',
+  'avanzarViajeTick.js',
+  'resolverTickConTransito.js',
 ];
 
 function cargarModulo(archivo) {
