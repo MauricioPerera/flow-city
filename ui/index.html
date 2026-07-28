@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Flow City — UI mínima</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<h1>Flow City — grid clickeable (mínimo)</h1>
+
+<div class="toolbar">
+  <label for="categoria">Categoría:</label>
+  <select id="categoria">
+    <option value="agricultura">agricultura</option>
+    <option value="reforestacion">reforestacion</option>
+    <option value="mineria">mineria</option>
+    <option value="pesca">pesca</option>
+    <option value="no_extractiva">no_extractiva</option>
+    <option value="residencial">residencial</option>
+    <option value="industrial">industrial</option>
+    <option value="casa">casa (multi-celda)</option>
+  </select>
+  <span id="nivelCasaWrap" style="display:none">
+    <label for="nivelCasa">Nivel:</label>
+    <select id="nivelCasa">
+      <option value="S">S (2x2)</option>
+      <option value="M">M (3x2)</option>
+      <option value="L">L (3x3)</option>
+    </select>
+  </span>
+</div>
+
+<div id="mensaje"></div>
+<div id="grid"></div>
+
+<script src="cjs-loader.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
