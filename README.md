@@ -1,6 +1,6 @@
 # Flow City
 
-![tests](https://img.shields.io/badge/tests-556%2F556%20passing-brightgreen)
+![tests](https://github.com/MauricioPerera/flow-city/actions/workflows/tests.yml/badge.svg)
 
 Repo: https://github.com/MauricioPerera/flow-city
 
