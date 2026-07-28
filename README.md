@@ -1,5 +1,7 @@
 # Flow City
 
+![tests](https://img.shields.io/badge/tests-556%2F556%20passing-brightgreen)
+
 Repo: https://github.com/MauricioPerera/flow-city
 
 City-tycoon de logística, gestión y automatización — ver [DEFINITION.md](DEFINITION.md).
