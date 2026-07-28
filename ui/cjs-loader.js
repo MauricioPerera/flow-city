@@ -39,6 +39,12 @@ var MODULOS_REQUERIDOS = [
   'agregarStockAlmacen.js',
   'retirarStockAlmacen.js',
   'producirTickNodoConAlmacen.js',
+  // Tesoreria y comercio (Contratos 05/07)
+  'crearTesoreria.js',
+  'registrarGasto.js',
+  'registrarIngreso.js',
+  'calcularMontoVenta.js',
+  'resolverCompraAlmacen.js',
   // Rutas y trafico (Contratos 03/04/08)
   'idVertice.js',
   'verticesDeCelda.js',

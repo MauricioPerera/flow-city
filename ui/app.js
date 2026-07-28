@@ -9,6 +9,11 @@ window.onCjsReady = function () {
   var agregarStockAlmacen = window.__cjs['agregarStockAlmacen'].agregarStockAlmacen;
   var retirarStockAlmacen = window.__cjs['retirarStockAlmacen'].retirarStockAlmacen;
   var producirTickNodoConAlmacen = window.__cjs['producirTickNodoConAlmacen'].producirTickNodoConAlmacen;
+  var crearTesoreria = window.__cjs['crearTesoreria'].crearTesoreria;
+  var registrarGasto = window.__cjs['registrarGasto'].registrarGasto;
+  var registrarIngreso = window.__cjs['registrarIngreso'].registrarIngreso;
+  var calcularMontoVenta = window.__cjs['calcularMontoVenta'].calcularMontoVenta;
+  var resolverCompraAlmacen = window.__cjs['resolverCompraAlmacen'].resolverCompraAlmacen;
   var verticeEntrada = window.__cjs['verticeEntrada'].verticeEntrada;
   var crearTramo = window.__cjs['crearTramo'].crearTramo;
   var conectarVertices = window.__cjs['conectarVertices'].conectarVertices;
@@ -40,6 +45,32 @@ window.onCjsReady = function () {
   var categoriasProductivas = { agricultura: true, reforestacion: true, no_extractiva: true, mineria: true, pesca: true };
   var CAPACIDAD_ALMACEN = 50; // ad hoc, misma capacidad para materia prima y producto
 
+  // Costos y precios ad hoc: costoConstruccionNodo.js de src/ solo cubre
+  // 'agricultura'/'extraccion-agua' (Contrato 14), no las 8 categorias que
+  // esta UI construye (incluye residencial/industrial/casa del Contrato 33/34,
+  // que ni siquiera colocarNodo acepta). Se define una tabla propia aca, mismo
+  // patron ad hoc que el resto del proyecto (ej. PRECIO_UNITARIO del Contrato 12).
+  var COSTO_CONSTRUCCION = {
+    agricultura: 30,
+    reforestacion: 25,
+    mineria: 40,
+    pesca: 35,
+    no_extractiva: 20,
+    residencial: 50,
+    industrial: 60,
+  };
+  var COSTO_CASA_POR_NIVEL = { S: 40, M: 70, L: 110 };
+  var PRECIO_UNITARIO = { agricultura: 3, reforestacion: 2, mineria: 4, pesca: 3, no_extractiva: 2 };
+  var CAPACIDAD_COMPRA_COMERCIO = 5; // ad hoc, unidades vendidas por nodo por tick
+  var SALDO_INICIAL = 100; // ad hoc
+
+  var tesoreria = crearTesoreria(SALDO_INICIAL);
+
+  function costoDeCategoria(categoria) {
+    if (categoria === 'casa') return COSTO_CASA_POR_NIVEL[nivelCasaEl.value];
+    return COSTO_CONSTRUCCION[categoria];
+  }
+
   var grafo = {};
   var nodosColocados = []; // { x, y, categoria, vertice, etiqueta }
   var rutasDibujadas = []; // { ax, ay, bx, by, tipoRuta }
@@ -64,6 +95,8 @@ window.onCjsReady = function () {
   var cantidadViajeEl = document.getElementById('cantidadViaje');
   var enviarViajeBtn = document.getElementById('enviarViaje');
   var avanzarTickProduccionBtn = document.getElementById('avanzarTickProduccion');
+  var saldoEl = document.getElementById('saldo');
+  var costoConstruccionEl = document.getElementById('costoConstruccion');
 
   gridEl.style.gridTemplateColumns = 'repeat(' + ANCHO + ', ' + TAM + 'px)';
   overlayEl.setAttribute('width', ANCHO * TAM);
@@ -98,6 +131,14 @@ window.onCjsReady = function () {
   function mostrarMensaje(texto, esError) {
     mensajeEl.textContent = texto;
     mensajeEl.className = esError ? 'error' : 'ok';
+  }
+
+  function renderSaldo() {
+    saldoEl.textContent = 'Saldo: $' + tesoreria.saldo.toFixed(2);
+  }
+
+  function renderCosto() {
+    costoConstruccionEl.textContent = 'Costo: $' + costoDeCategoria(categoriaEl.value);
   }
 
   function registrarNodoColocado(x, y, categoria) {
@@ -218,10 +259,18 @@ window.onCjsReady = function () {
 
   categoriaEl.addEventListener('change', function () {
     nivelCasaWrap.style.display = categoriaEl.value === 'casa' ? '' : 'none';
+    renderCosto();
   });
+
+  nivelCasaEl.addEventListener('change', renderCosto);
 
   function manejarClickConstruir(x, y) {
     var categoria = categoriaEl.value;
+    var costo = costoDeCategoria(categoria);
+    if (tesoreria.saldo < costo) {
+      mostrarMensaje('Error: saldo insuficiente (costo $' + costo + ', disponible $' + tesoreria.saldo.toFixed(2) + ')', true);
+      return;
+    }
     try {
       var nodo = crearNodoDeMuestra(categoria);
       if (categoria === 'casa') {
@@ -232,7 +281,9 @@ window.onCjsReady = function () {
         colocarNodo(grid, x, y, categoria, nodo);
       }
       registrarNodoColocado(x, y, categoria);
-      mostrarMensaje('OK: ' + categoria + ' colocado en (' + x + ', ' + y + ')', false);
+      registrarGasto(tesoreria, costo);
+      renderSaldo();
+      mostrarMensaje('OK: ' + categoria + ' colocado en (' + x + ', ' + y + '), costo $' + costo, false);
     } catch (error) {
       mostrarMensaje('Error: ' + error.message, true);
     }
@@ -321,7 +372,21 @@ window.onCjsReady = function () {
       } else {
         resumen.push(info.etiqueta + ': +' + resultado.producido);
       }
+
+      // Comercio: mismo patron que ejecutarCadenaBombaGranjaComercio.js
+      // (Contrato 12) - vende hasta CAPACIDAD_COMPRA_COMERCIO del stock
+      // acumulado, al precio ad hoc de la categoria.
+      if (info.almacen.stockProducto > 0) {
+        var vendido = resolverCompraAlmacen(info.almacen.stockProducto, CAPACIDAD_COMPRA_COMERCIO);
+        if (vendido > 0) {
+          retirarStockAlmacen(info.almacen, 'producto', vendido);
+          var monto = calcularMontoVenta(vendido, PRECIO_UNITARIO[info.categoria]);
+          registrarIngreso(tesoreria, monto);
+          resumen.push(info.etiqueta + ': vendio ' + vendido + ' por $' + monto.toFixed(2));
+        }
+      }
     });
+    renderSaldo();
     mostrarMensaje(
       resumen.length > 0 ? 'Tick de produccion -> ' + resumen.join(' | ') : 'No hay nodos productivos colocados',
       false
@@ -441,4 +506,6 @@ window.onCjsReady = function () {
 
   render();
   dibujarOverlay();
+  renderSaldo();
+  renderCosto();
 };

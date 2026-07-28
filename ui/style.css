@@ -26,6 +26,9 @@ h1 {
 #mensaje.ok { color: #6fd66f; }
 #mensaje.error { color: #ff6b6b; }
 
+.saldo { font-weight: bold; color: #ffd54f; }
+.costo { color: #bdbdbd; font-size: 13px; }
+
 #gridWrap {
   position: relative;
   width: max-content;
