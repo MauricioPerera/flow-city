@@ -83,11 +83,14 @@ window.onCjsReady = function () {
   // bomba->granja de los Contratos 09/17/25 usa esa categoria, que no existe
   // en el vocabulario de puedeConstruir.js/puedeConstruirFlexible.js de esta
   // UI). Convencion ad hoc, documentada: 'pesca' cubre la necesidad de agua,
-  // 'agricultura' cubre la necesidad de comida. Ambas son categorias que el
-  // jugador ya puede construir.
+  // 'agricultura' Y 'no_extractiva' cubren la necesidad de comida (segundo
+  // productor de comida agregado tras el playtest: sostener una casa grande
+  // con una sola cadena de suministro dejaba la economia siempre ajustada).
+  // 'no_extractiva' NO recibe el multiplicador de clima (ver Fase 1 mas abajo)
+  // - igual que el Contrato 29, el clima solo afecta 'agricultura'.
   var categoriasVivienda = { residencial: true, casa: true };
-  var CATEGORIA_AGUA = 'pesca';
-  var CATEGORIA_COMIDA = 'agricultura';
+  var CATEGORIAS_AGUA = ['pesca'];
+  var CATEGORIAS_COMIDA = ['agricultura', 'no_extractiva'];
   var NECESIDAD_PER_CAPITA = 0.2; // mismo valor ad hoc que ejecutarCadenaPoblacionDinamica.js
   // ad hoc, mas alta que en los ejecutores de referencia (que usan poblaciones
   // de 10+): con capacidades de vivienda de esta UI (4-9), calcularCrecimientoPoblacion
@@ -538,16 +541,20 @@ window.onCjsReady = function () {
     var aguaRequerida = poblacionCiudad * NECESIDAD_PER_CAPITA;
     var comidaRequerida = poblacionCiudad * NECESIDAD_PER_CAPITA;
 
-    function consumirDeCategoria(categoria, requerido) {
+    // Acepta una lista de categorias (no solo una) - la necesidad se cubre
+    // con la suma del stock de TODAS las categorias de esa lista (bolsa
+    // unica a nivel ciudad, ver nota mas arriba), retirando de a una fuente
+    // por vez en el orden en que fueron colocadas hasta cubrir lo requerido.
+    function consumirDeCategorias(categorias, requerido) {
       var disponible = 0;
       nodosColocados.forEach(function (info) {
-        if (info.categoria === categoria && info.almacen) disponible += info.almacen.stockProducto;
+        if (categorias.indexOf(info.categoria) !== -1 && info.almacen) disponible += info.almacen.stockProducto;
       });
       var recibido = Math.min(requerido, disponible);
       var porRetirar = Math.floor(recibido);
       nodosColocados.forEach(function (info) {
         if (porRetirar <= 0) return;
-        if (info.categoria === categoria && info.almacen && info.almacen.stockProducto > 0) {
+        if (categorias.indexOf(info.categoria) !== -1 && info.almacen && info.almacen.stockProducto > 0) {
           var tomar = Math.min(porRetirar, info.almacen.stockProducto);
           retirarStockAlmacen(info.almacen, 'producto', tomar);
           porRetirar -= tomar;
@@ -556,8 +563,8 @@ window.onCjsReady = function () {
       return recibido;
     }
 
-    var aguaRecibida = consumirDeCategoria(CATEGORIA_AGUA, aguaRequerida);
-    var comidaRecibida = consumirDeCategoria(CATEGORIA_COMIDA, comidaRequerida);
+    var aguaRecibida = consumirDeCategorias(CATEGORIAS_AGUA, aguaRequerida);
+    var comidaRecibida = consumirDeCategorias(CATEGORIAS_COMIDA, comidaRequerida);
     var coberturaAgua = calcularCoberturaNecesidad(aguaRequerida, aguaRecibida);
     var coberturaComida = calcularCoberturaNecesidad(comidaRequerida, comidaRecibida);
     var indiceCobertura = combinarCoberturas([coberturaAgua, coberturaComida]);
