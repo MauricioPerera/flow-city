@@ -148,6 +148,9 @@ window.onCjsReady = function () {
   var enviarViajeBtn = document.getElementById('enviarViaje');
   var avanzarTickProduccionBtn = document.getElementById('avanzarTickProduccion');
   var venderProduccionBtn = document.getElementById('venderProduccion');
+  var guardarPartidaBtn = document.getElementById('guardarPartida');
+  var cargarPartidaBtn = document.getElementById('cargarPartida');
+  var CLAVE_GUARDADO = 'flowCityGuardado';
   var saldoEl = document.getElementById('saldo');
   var costoConstruccionEl = document.getElementById('costoConstruccion');
   var poblacionTotalEl = document.getElementById('poblacionTotal');
@@ -445,7 +448,10 @@ window.onCjsReady = function () {
       conectarVertices(grafo, rutaOrigenSeleccionado.vertice, nodoInfo.vertice, tramo);
       var pa = pixelDeVertice(rutaOrigenSeleccionado.vertice);
       var pb = pixelDeVertice(nodoInfo.vertice);
-      rutasDibujadas.push({ ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta, tramo: tramo });
+      rutasDibujadas.push({
+        ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta, tramo: tramo,
+        verticeA: rutaOrigenSeleccionado.vertice, verticeB: nodoInfo.vertice,
+      });
       dibujarOverlay();
       mostrarMensaje(
         'OK: ' + tipoRuta + ' conectada (' + rutaOrigenSeleccionado.etiqueta + ' <-> ' +
@@ -627,6 +633,71 @@ window.onCjsReady = function () {
     renderSaldo();
     mostrarMensaje(resumen.length > 0 ? 'Venta -> ' + resumen.join(' | ') : 'No hay stock para vender', false);
     render();
+  });
+
+  guardarPartidaBtn.addEventListener('click', function () {
+    // Todo el estado es objetos planos (grid/nodosColocados/grafo/tramos),
+    // serializa directo a JSON. La unica referencia compartida real es
+    // rutasDibujadas[i].tramo === grafo[verticeA][verticeB]; guardar el
+    // objeto tramo duplicado no rompe nada al guardar, pero al CARGAR hay
+    // que re-vincularlo por vertice (ver cargarPartidaBtn) para que sea la
+    // MISMA referencia que grafo, no una copia divergente.
+    var snapshot = {
+      version: 1,
+      tickActual: tickActual,
+      poblacionFraccionAcumulada: poblacionFraccionAcumulada,
+      tesoreria: tesoreria,
+      grid: grid,
+      nodosColocados: nodosColocados,
+      grafo: grafo,
+      rutas: rutasDibujadas.map(function (r) {
+        return { ax: r.ax, ay: r.ay, bx: r.bx, by: r.by, tipoRuta: r.tipoRuta, verticeA: r.verticeA, verticeB: r.verticeB };
+      }),
+    };
+    try {
+      localStorage.setItem(CLAVE_GUARDADO, JSON.stringify(snapshot));
+      mostrarMensaje('OK: partida guardada (tick ' + tickActual + ')', false);
+    } catch (error) {
+      mostrarMensaje('Error al guardar: ' + error.message, true);
+    }
+  });
+
+  cargarPartidaBtn.addEventListener('click', function () {
+    var texto = localStorage.getItem(CLAVE_GUARDADO);
+    if (!texto) {
+      mostrarMensaje('Error: no hay ninguna partida guardada', true);
+      return;
+    }
+    try {
+      var snapshot = JSON.parse(texto);
+      if (viajeActivo) {
+        clearInterval(viajeActivo.intervalId);
+        viajeActivo = null;
+      }
+      tickActual = snapshot.tickActual;
+      poblacionFraccionAcumulada = snapshot.poblacionFraccionAcumulada;
+      tesoreria = snapshot.tesoreria;
+      grid = snapshot.grid;
+      nodosColocados = snapshot.nodosColocados;
+      grafo = snapshot.grafo;
+      rutasDibujadas = snapshot.rutas.map(function (r) {
+        return {
+          ax: r.ax, ay: r.ay, bx: r.bx, by: r.by, tipoRuta: r.tipoRuta,
+          tramo: grafo[r.verticeA][r.verticeB], verticeA: r.verticeA, verticeB: r.verticeB,
+        };
+      });
+      rutaOrigenSeleccionado = null;
+      actualizarSelectsViaje();
+      render();
+      dibujarOverlay();
+      renderSaldo();
+      renderCosto();
+      renderPoblacion();
+      renderCalendario(calendarioDeTick(tickActual));
+      mostrarMensaje('OK: partida cargada (tick ' + tickActual + ')', false);
+    } catch (error) {
+      mostrarMensaje('Error al cargar: ' + error.message, true);
+    }
   });
 
   enviarViajeBtn.addEventListener('click', function () {
