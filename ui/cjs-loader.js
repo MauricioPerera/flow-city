@@ -50,6 +50,10 @@ var MODULOS_REQUERIDOS = [
   'calcularCoberturaNecesidad.js',
   'combinarCoberturas.js',
   'calcularCrecimientoPoblacion.js',
+  // Calendario y estaciones (Contratos 04/27/29)
+  'calendarioDeTick.js',
+  'calcularMultiplicadorClima.js',
+  'aplicarMantenimientoTick.js',
   // Rutas y trafico (Contratos 03/04/08)
   'idVertice.js',
   'verticesDeCelda.js',

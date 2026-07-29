@@ -8,6 +8,7 @@ window.onCjsReady = function () {
   var crearAlmacen = window.__cjs['crearAlmacen'].crearAlmacen;
   var agregarStockAlmacen = window.__cjs['agregarStockAlmacen'].agregarStockAlmacen;
   var retirarStockAlmacen = window.__cjs['retirarStockAlmacen'].retirarStockAlmacen;
+  var producirTickNodo = window.__cjs['producirTickNodo'].producirTickNodo;
   var producirTickNodoConAlmacen = window.__cjs['producirTickNodoConAlmacen'].producirTickNodoConAlmacen;
   var crearTesoreria = window.__cjs['crearTesoreria'].crearTesoreria;
   var registrarGasto = window.__cjs['registrarGasto'].registrarGasto;
@@ -18,6 +19,9 @@ window.onCjsReady = function () {
   var calcularCoberturaNecesidad = window.__cjs['calcularCoberturaNecesidad'].calcularCoberturaNecesidad;
   var combinarCoberturas = window.__cjs['combinarCoberturas'].combinarCoberturas;
   var calcularCrecimientoPoblacion = window.__cjs['calcularCrecimientoPoblacion'].calcularCrecimientoPoblacion;
+  var calendarioDeTick = window.__cjs['calendarioDeTick'].calendarioDeTick;
+  var calcularMultiplicadorClima = window.__cjs['calcularMultiplicadorClima'].calcularMultiplicadorClima;
+  var aplicarMantenimientoTick = window.__cjs['aplicarMantenimientoTick'].aplicarMantenimientoTick;
   var verticeEntrada = window.__cjs['verticeEntrada'].verticeEntrada;
   var crearTramo = window.__cjs['crearTramo'].crearTramo;
   var conectarVertices = window.__cjs['conectarVertices'].conectarVertices;
@@ -87,6 +91,19 @@ window.onCjsReady = function () {
   var TASA_BASE_POBLACION = 0.3;
   var POBLACION_RESIDENCIAL_FIJA = 4; // ad hoc, equivale a una casa nivel S
 
+  // Mantenimiento: costoMantenimientoNodo.js de src/ (Contrato 14) tiene la
+  // misma tabla acotada que costoConstruccionNodo.js ('extraccion-agua'/'agricultura'
+  // solamente) - no cubre las 8 categorias de esta UI. Tabla propia ad hoc,
+  // mismo patron que COSTO_CONSTRUCCION. Se cobra solo en dias laborales
+  // (Contrato 27), vía aplicarMantenimientoTick.js (esa si es generica: solo
+  // suma un array de costos ya resueltos y cobra una vez si el total > 0).
+  var COSTO_MANTENIMIENTO = {
+    agricultura: 2, reforestacion: 1, mineria: 3, pesca: 2,
+    no_extractiva: 1, residencial: 1, industrial: 2,
+  };
+  var COSTO_MANTENIMIENTO_CASA = 1; // ad hoc, igual para S/M/L en esta primera pasada
+
+  var tickActual = 0;
   var tesoreria = crearTesoreria(SALDO_INICIAL);
 
   // Acumulador de fraccion de poblacion: calcularCrecimientoPoblacion.js
@@ -132,6 +149,7 @@ window.onCjsReady = function () {
   var saldoEl = document.getElementById('saldo');
   var costoConstruccionEl = document.getElementById('costoConstruccion');
   var poblacionTotalEl = document.getElementById('poblacionTotal');
+  var calendarioEl = document.getElementById('calendario');
 
   gridEl.style.gridTemplateColumns = 'repeat(' + ANCHO + ', ' + TAM + 'px)';
   overlayEl.setAttribute('width', ANCHO * TAM);
@@ -202,6 +220,12 @@ window.onCjsReady = function () {
 
   function renderPoblacion() {
     poblacionTotalEl.textContent = 'Población: ' + poblacionTotal();
+  }
+
+  function renderCalendario(calendario) {
+    calendarioEl.textContent = 'Día ' + calendario.dia + ' (año ' + calendario.anio + ', mes ' +
+      calendario.mesDelAnio + ', semana ' + calendario.semanaDelMes + ', ' + calendario.diaDeSemana +
+      (calendario.esLaboral ? ', laboral' : ', fin de semana') + ') — ' + calendario.estacion;
   }
 
   function nodoPorVertice(vertice) {
@@ -417,14 +441,33 @@ window.onCjsReady = function () {
 
   avanzarTickProduccionBtn.addEventListener('click', function () {
     var resumen = [];
+    var calendario = calendarioDeTick(tickActual);
+    tickActual += 1;
 
-    // Fase 1: produccion (igual que antes).
+    // Fase 1: produccion. La agricultura recibe el multiplicador de clima de
+    // la estacion actual (Contrato 29: solo afecta agricultura, aplicado
+    // DESPUES de producirTickNodo, sobre el crudo, antes de guardarlo en el
+    // almacen - mismo orden que ejecutarProduccionEstacional.js). Para el
+    // resto de categorias se sigue usando producirTickNodoConAlmacen tal cual.
     nodosColocados.forEach(function (info) {
       if (!info.almacen) return;
       var nodo = obtenerCelda(grid, info.x, info.y).nodo;
       var entradaRecibida = 0;
       if (nodo.ratioEntrada !== null && info.almacen.stockMateriaPrima > 0) {
         entradaRecibida = retirarStockAlmacen(info.almacen, 'materiaPrima', info.almacen.stockMateriaPrima);
+      }
+      if (info.categoria === 'agricultura') {
+        var crudo = producirTickNodo(nodo, entradaRecibida);
+        var multiplicador = calcularMultiplicadorClima(calendario.estacion);
+        var entero = Math.floor(crudo * multiplicador);
+        var espacioLibre = info.almacen.capacidadProducto - info.almacen.stockProducto;
+        if (entero > espacioLibre) {
+          resumen.push(info.etiqueta + ': almacen de producto lleno, produccion perdida');
+        } else {
+          if (entero > 0) agregarStockAlmacen(info.almacen, 'producto', entero);
+          resumen.push(info.etiqueta + ': +' + entero + ' (clima x' + multiplicador + ')');
+        }
+        return;
       }
       var resultado = producirTickNodoConAlmacen(nodo, info.almacen, entradaRecibida);
       if (resultado.almacenLleno) {
@@ -502,8 +545,20 @@ window.onCjsReady = function () {
       );
     }
 
+    // Fase 3: mantenimiento, solo en dias laborales (Contrato 27) - se salta
+    // por completo el fin de semana, sin acumularse ni cobrarse doble despues.
+    if (calendario.esLaboral) {
+      var costos = nodosColocados.map(function (info) {
+        return info.categoria === 'casa' ? COSTO_MANTENIMIENTO_CASA : (COSTO_MANTENIMIENTO[info.categoria] || 0);
+      });
+      var totalMantenimiento = costos.reduce(function (a, b) { return a + b; }, 0);
+      aplicarMantenimientoTick(tesoreria, costos);
+      if (totalMantenimiento > 0) resumen.push('mantenimiento: -$' + totalMantenimiento.toFixed(2));
+    }
+
     renderSaldo();
     renderPoblacion();
+    renderCalendario(calendario);
     mostrarMensaje(
       resumen.length > 0 ? 'Tick de produccion -> ' + resumen.join(' | ') : 'No hay nodos productivos colocados',
       false
@@ -647,4 +702,5 @@ window.onCjsReady = function () {
   renderSaldo();
   renderCosto();
   renderPoblacion();
+  renderCalendario(calendarioDeTick(tickActual));
 };
