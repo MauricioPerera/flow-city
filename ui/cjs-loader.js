@@ -59,6 +59,8 @@ var MODULOS_REQUERIDOS = [
   'verticesDeCelda.js',
   'verticeEntrada.js',
   'crearTramo.js',
+  'calcularToleranciaSaturacionRutaPorNivel.js',
+  'crearTramoConNivel.js',
   'tramoAdmiteTrafico.js',
   'conectarVertices.js',
   'calcularSaturacion.js',

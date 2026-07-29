@@ -24,7 +24,7 @@ window.onCjsReady = function () {
   var calcularMultiplicadorClima = window.__cjs['calcularMultiplicadorClima'].calcularMultiplicadorClima;
   var aplicarMantenimientoTick = window.__cjs['aplicarMantenimientoTick'].aplicarMantenimientoTick;
   var verticeEntrada = window.__cjs['verticeEntrada'].verticeEntrada;
-  var crearTramo = window.__cjs['crearTramo'].crearTramo;
+  var crearTramoConNivel = window.__cjs['crearTramoConNivel'].crearTramoConNivel;
   var conectarVertices = window.__cjs['conectarVertices'].conectarVertices;
   var encontrarRuta = window.__cjs['encontrarRuta'].encontrarRuta;
   var resolverViaje = window.__cjs['resolverViaje'].resolverViaje;
@@ -98,6 +98,16 @@ window.onCjsReady = function () {
   // terreno a mano en manejarClickConstruir y se asigna directo con
   // asignarNodoCelda.js. Requiere agua_profunda, igual que 'pesca'.
   var CATEGORIA_PUERTO = 'puerto';
+  // Cruce de agua abierta para ferrocarril/subte (pedido del usuario, no hay
+  // regla equivalente en src/): nivel S nunca puede cruzar agua abierta;
+  // M y L si, hasta un limite de celdas de agua abierta que crece con el
+  // nivel. Ferrocarril = "puente" (cruza rios/arroyos, nunca un oceano ->
+  // limite chico); subte = "tunel submarino" (algo mas generoso, mismo
+  // patron de nivel). 'carretera' nunca puede cruzar agua abierta, en
+  // ningun nivel. 'maritima' no tiene limite (para eso existe, siempre que
+  // tenga puerto en cada extremo).
+  var LIMITE_CRUCE_FERROCARRIL = { M: 2, L: 4 };
+  var LIMITE_CRUCE_SUBTE = { M: 3, L: 6 };
   var CATEGORIAS_AGUA = ['pesca'];
   var CATEGORIAS_COMIDA = ['agricultura', 'no_extractiva'];
   var NECESIDAD_PER_CAPITA = 0.2; // mismo valor ad hoc que ejecutarCadenaPoblacionDinamica.js
@@ -168,6 +178,7 @@ window.onCjsReady = function () {
   var nivelCasaWrap = document.getElementById('nivelCasaWrap');
   var nivelCasaEl = document.getElementById('nivelCasa');
   var tipoRutaEl = document.getElementById('tipoRuta');
+  var nivelRutaEl = document.getElementById('nivelRuta');
   var capacidadRutaEl = document.getElementById('capacidadRuta');
   var origenViajeEl = document.getElementById('origenViaje');
   var destinoViajeEl = document.getElementById('destinoViaje');
@@ -210,18 +221,20 @@ window.onCjsReady = function () {
     return [a, { x: b.x, y: a.y }, b];
   }
 
-  // 'carretera' debe respetar el terreno: no puede cruzar agua abierta por
-  // el medio (pedido del usuario). No se reusa rutaCruzaTerrenoValido.js de
-  // src/ (Contrato 39) porque esa funcion solo mira el terreno de los DOS
-  // EXTREMOS - en esta UI el extremo puede ser legitimamente agua_profunda
-  // si es un nodo 'puerto' o 'pesca' (ambos la requieren para construirse),
-  // y aplicar esa regla ahi rompería la conexion carretera->puerto que ya
-  // se prueba en un playtest real. En cambio se revisa el CAMINO: se
-  // excluye el primer y ultimo paso de cada segmento (adyacentes a los
-  // nodos conectados, donde tocar agua es esperado si son puerto/pesca) y
-  // se bloquea solo si algun paso INTERIOR tiene agua_profunda a ambos
-  // lados (agua abierta de verdad, no la orilla de un puerto).
-  function segmentoTerrestreCruzaAguaAbierta(p1, p2) {
+  // Cuenta cuantos "pasos" (celdas) de agua abierta cruza un camino
+  // terrestre (pedido del usuario). No se reusa rutaCruzaTerrenoValido.js
+  // de src/ (Contrato 39) porque esa funcion solo mira el terreno de los
+  // DOS EXTREMOS - en esta UI un extremo puede ser legitimamente
+  // agua_profunda si el nodo es 'puerto' o 'pesca' (ambos la requieren para
+  // construirse), y aplicar esa regla ahi rompería la conexion
+  // carretera/ferrocarril->puerto que ya se probo en un playtest real. En
+  // cambio se revisa el CAMINO: se excluye el primer y ultimo paso de cada
+  // segmento (adyacentes a los nodos conectados, donde tocar agua es
+  // esperado si son puerto/pesca) y solo se cuenta un paso INTERIOR si
+  // tiene agua_profunda a AMBOS lados (agua abierta de verdad, no la orilla
+  // de un puerto).
+  function contarPasosAguaAbiertaEnSegmento(p1, p2) {
+    var pasos = 0;
     if (p1.y === p2.y) {
       var filaBorde = p1.y / TAM;
       var xIni = Math.min(p1.x, p2.x) / TAM;
@@ -229,7 +242,7 @@ window.onCjsReady = function () {
       for (var cx = xIni + 1; cx < xFin - 1; cx += 1) {
         var arriba = filaBorde - 1 >= 0 ? obtenerCelda(grid, cx, filaBorde - 1).terreno : null;
         var abajo = filaBorde < ALTO ? obtenerCelda(grid, cx, filaBorde).terreno : null;
-        if (arriba === 'agua_profunda' && abajo === 'agua_profunda') return true;
+        if (arriba === 'agua_profunda' && abajo === 'agua_profunda') pasos += 1;
       }
     } else if (p1.x === p2.x) {
       var colBorde = p1.x / TAM;
@@ -238,15 +251,15 @@ window.onCjsReady = function () {
       for (var cy = yIni + 1; cy < yFin - 1; cy += 1) {
         var izq = colBorde - 1 >= 0 ? obtenerCelda(grid, colBorde - 1, cy).terreno : null;
         var der = colBorde < ANCHO ? obtenerCelda(grid, colBorde, cy).terreno : null;
-        if (izq === 'agua_profunda' && der === 'agua_profunda') return true;
+        if (izq === 'agua_profunda' && der === 'agua_profunda') pasos += 1;
       }
     }
-    return false;
+    return pasos;
   }
 
-  function rutaCarreteraCruzaAguaAbierta(a, b) {
+  function contarPasosAguaAbierta(a, b) {
     var puntos = segmentoOrtogonal(a, b);
-    return segmentoTerrestreCruzaAguaAbierta(puntos[0], puntos[1]) || segmentoTerrestreCruzaAguaAbierta(puntos[1], puntos[2]);
+    return contarPasosAguaAbiertaEnSegmento(puntos[0], puntos[1]) + contarPasosAguaAbiertaEnSegmento(puntos[1], puntos[2]);
   }
 
   function crearNodoDeMuestra(categoria) {
@@ -602,22 +615,41 @@ window.onCjsReady = function () {
     try {
       var tipoRuta = tipoRutaEl.value;
       var capacidad = Number(capacidadRutaEl.value);
+      var nivel = nivelRutaEl.value;
       // Rutas maritimas requieren puerto en AMBOS extremos (pedido del
       // usuario, no hay regla equivalente en src/) - de lo contrario no hay
-      // forma de cruzar de una orilla a la otra.
+      // forma de cruzar de una orilla a la otra. Sin limite de distancia
+      // (para eso existe maritima).
       if (tipoRuta === 'maritima' && (rutaOrigenSeleccionado.categoria !== CATEGORIA_PUERTO || nodoInfo.categoria !== CATEGORIA_PUERTO)) {
         throw new Error('las rutas maritimas requieren un puerto en cada extremo');
       }
       var pa = pixelDeVertice(rutaOrigenSeleccionado.vertice);
       var pb = pixelDeVertice(nodoInfo.vertice);
-      if (tipoRuta === 'carretera' && rutaCarreteraCruzaAguaAbierta(pa, pb)) {
-        throw new Error('la carretera cruza agua abierta - usa una ruta maritima con puertos, o ferrocarril/subte');
+      var pasosAgua = contarPasosAguaAbierta(pa, pb);
+      if (pasosAgua > 0) {
+        if (tipoRuta === 'carretera') {
+          throw new Error('la carretera cruza agua abierta - usa una ruta maritima con puertos, o ferrocarril/subte de nivel M o L');
+        }
+        if (tipoRuta === 'ferrocarril' || tipoRuta === 'subte') {
+          // Puente (ferrocarril) o tunel submarino (subte): nivel S nunca
+          // puede cruzar agua abierta, M/L si hasta un limite que crece con
+          // el nivel (pedido del usuario).
+          if (nivel === 'S') {
+            throw new Error(tipoRuta + ' nivel S no puede cruzar agua abierta - se necesita nivel M o L');
+          }
+          var limite = (tipoRuta === 'ferrocarril' ? LIMITE_CRUCE_FERROCARRIL : LIMITE_CRUCE_SUBTE)[nivel];
+          if (pasosAgua > limite) {
+            throw new Error(
+              tipoRuta + ' nivel ' + nivel + ' cruza como maximo ' + limite + ' celda(s) de agua abierta (esta ruta cruza ' + pasosAgua + ')'
+            );
+          }
+        }
       }
       // Longitud = distancia Manhattan entre anclas de celda (decision ad hoc,
       // no hay ninguna nocion de "distancia" impuesta por src/ para esto).
       var longitud = Math.abs(rutaOrigenSeleccionado.x - x) + Math.abs(rutaOrigenSeleccionado.y - y);
       if (longitud <= 0) longitud = 1;
-      var tramo = crearTramo(tipoRuta, capacidad, longitud, undefined);
+      var tramo = crearTramoConNivel(tipoRuta, capacidad, longitud, undefined, nivel);
       conectarVertices(grafo, rutaOrigenSeleccionado.vertice, nodoInfo.vertice, tramo);
       rutasDibujadas.push({
         ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta, tramo: tramo,
@@ -625,8 +657,9 @@ window.onCjsReady = function () {
       });
       dibujarOverlay();
       mostrarMensaje(
-        'OK: ' + tipoRuta + ' conectada (' + rutaOrigenSeleccionado.etiqueta + ' <-> ' +
-          nodoInfo.etiqueta + ', longitud ' + longitud + ')',
+        'OK: ' + tipoRuta + ' nivel ' + nivel + ' conectada (' + rutaOrigenSeleccionado.etiqueta + ' <-> ' +
+          nodoInfo.etiqueta + ', longitud ' + longitud + ', capacidad efectiva ' + tramo.capacidad +
+          (pasosAgua > 0 ? ', cruza ' + pasosAgua + ' celda(s) de agua' : '') + ')',
         false
       );
     } catch (error) {
