@@ -8,6 +8,7 @@ window.onCjsReady = function () {
   var crearAlmacen = window.__cjs['crearAlmacen'].crearAlmacen;
   var agregarStockAlmacen = window.__cjs['agregarStockAlmacen'].agregarStockAlmacen;
   var retirarStockAlmacen = window.__cjs['retirarStockAlmacen'].retirarStockAlmacen;
+  var asignarNodoCelda = window.__cjs['asignarNodoCelda'].asignarNodoCelda;
   var producirTickNodo = window.__cjs['producirTickNodo'].producirTickNodo;
   var producirTickNodoConAlmacen = window.__cjs['producirTickNodoConAlmacen'].producirTickNodoConAlmacen;
   var crearTesoreria = window.__cjs['crearTesoreria'].crearTesoreria;
@@ -68,6 +69,7 @@ window.onCjsReady = function () {
     no_extractiva: 20,
     residencial: 50,
     industrial: 60,
+    puerto: 45,
   };
   var COSTO_CASA_POR_NIVEL = { S: 40, M: 70, L: 110 };
   var PRECIO_UNITARIO = { agricultura: 3, reforestacion: 2, mineria: 4, pesca: 3, no_extractiva: 2 };
@@ -89,6 +91,13 @@ window.onCjsReady = function () {
   // 'no_extractiva' NO recibe el multiplicador de clima (ver Fase 1 mas abajo)
   // - igual que el Contrato 29, el clima solo afecta 'agricultura'.
   var categoriasVivienda = { residencial: true, casa: true };
+  // Puerto: infraestructura pura (sin produccion/almacen/poblacion), solo
+  // habilita rutas maritimas. Ni puedeConstruir.js (tabla clasica de src/,
+  // no tiene 'puerto') ni puedeConstruirFlexible.js (excluye agua_profunda,
+  // justo lo que un puerto necesita) sirven para colocarlo - se valida el
+  // terreno a mano en manejarClickConstruir y se asigna directo con
+  // asignarNodoCelda.js. Requiere agua_profunda, igual que 'pesca'.
+  var CATEGORIA_PUERTO = 'puerto';
   var CATEGORIAS_AGUA = ['pesca'];
   var CATEGORIAS_COMIDA = ['agricultura', 'no_extractiva'];
   var NECESIDAD_PER_CAPITA = 0.2; // mismo valor ad hoc que ejecutarCadenaPoblacionDinamica.js
@@ -109,7 +118,7 @@ window.onCjsReady = function () {
   // suma un array de costos ya resueltos y cobra una vez si el total > 0).
   var COSTO_MANTENIMIENTO = {
     agricultura: 2, reforestacion: 1, mineria: 3, pesca: 2,
-    no_extractiva: 1, residencial: 1, industrial: 2,
+    no_extractiva: 1, residencial: 1, industrial: 2, puerto: 2,
   };
   var COSTO_MANTENIMIENTO_CASA = 1; // ad hoc, igual para S/M/L en esta primera pasada
 
@@ -210,6 +219,9 @@ window.onCjsReady = function () {
     }
     if (categoriasFlexibles[categoria]) {
       return { categoria: categoria };
+    }
+    if (categoria === CATEGORIA_PUERTO) {
+      return { categoria: CATEGORIA_PUERTO };
     }
     if (categoria === 'casa') {
       return { categoria: 'residencial', nivel: nivelCasaEl.value };
@@ -498,6 +510,12 @@ window.onCjsReady = function () {
       var nodo = crearNodoDeMuestra(categoria);
       if (categoria === 'casa') {
         colocarCasaMultiCelda(grid, nodo.nivel, x, y, nodo);
+      } else if (categoria === CATEGORIA_PUERTO) {
+        var celdaPuerto = obtenerCelda(grid, x, y);
+        if (celdaPuerto.terreno !== 'agua_profunda') {
+          throw new Error("el terreno '" + celdaPuerto.terreno + "' no admite la categoria 'puerto' (requiere agua_profunda)");
+        }
+        asignarNodoCelda(grid, x, y, nodo);
       } else if (categoriasFlexibles[categoria]) {
         colocarNodoFlexible(grid, x, y, categoria, nodo);
       } else {
@@ -545,6 +563,12 @@ window.onCjsReady = function () {
     try {
       var tipoRuta = tipoRutaEl.value;
       var capacidad = Number(capacidadRutaEl.value);
+      // Rutas maritimas requieren puerto en AMBOS extremos (pedido del
+      // usuario, no hay regla equivalente en src/) - de lo contrario no hay
+      // forma de cruzar de una orilla a la otra.
+      if (tipoRuta === 'maritima' && (rutaOrigenSeleccionado.categoria !== CATEGORIA_PUERTO || nodoInfo.categoria !== CATEGORIA_PUERTO)) {
+        throw new Error('las rutas maritimas requieren un puerto en cada extremo');
+      }
       // Longitud = distancia Manhattan entre anclas de celda (decision ad hoc,
       // no hay ninguna nocion de "distancia" impuesta por src/ para esto).
       var longitud = Math.abs(rutaOrigenSeleccionado.x - x) + Math.abs(rutaOrigenSeleccionado.y - y);
