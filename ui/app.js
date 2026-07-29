@@ -72,6 +72,11 @@ window.onCjsReady = function () {
   var COSTO_CASA_POR_NIVEL = { S: 40, M: 70, L: 110 };
   var PRECIO_UNITARIO = { agricultura: 3, reforestacion: 2, mineria: 4, pesca: 3, no_extractiva: 2 };
   var CAPACIDAD_COMPRA_COMERCIO = 5; // ad hoc, unidades vendidas por nodo por tick
+  // ad hoc: con produccionFija=1 (valor original), mineria/pesca vendian 1/tick
+  // (max $4 o $3) contra un mantenimiento de $3-$2/tick solo esa construccion
+  // - practicamente empataba, sin margen para financiar nada mas (hallazgo real
+  // del playtest de punta a punta). Se sube a 3/tick para que dejen margen neto.
+  var PRODUCCION_FIJA_EXTRACCION = 3;
   var SALDO_INICIAL = 100; // ad hoc
 
   // Poblacion: no hay categoria "extraccion-agua" en esta UI (el patron
@@ -175,7 +180,7 @@ window.onCjsReady = function () {
       return crearNodoProductivo(categoria, 1, 1, null);
     }
     if (categoriasExtraccion[categoria]) {
-      return crearNodoProductivo(categoria, null, null, 1);
+      return crearNodoProductivo(categoria, null, null, PRODUCCION_FIJA_EXTRACCION);
     }
     if (categoriasFlexibles[categoria]) {
       return { categoria: categoria };
