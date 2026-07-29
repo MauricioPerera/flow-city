@@ -30,6 +30,8 @@ window.onCjsReady = function () {
   var calcularTicksViaje = window.__cjs['calcularTicksViaje'].calcularTicksViaje;
   var iniciarViajeEnTransito = window.__cjs['iniciarViajeEnTransito'].iniciarViajeEnTransito;
   var resolverTickConTransito = window.__cjs['resolverTickConTransito'].resolverTickConTransito;
+  var registrarCargaTramo = window.__cjs['registrarCargaTramo'].registrarCargaTramo;
+  var calcularSaturacion = window.__cjs['calcularSaturacion'].calcularSaturacion;
 
   var ANCHO = 12;
   var ALTO = 10;
@@ -286,19 +288,51 @@ window.onCjsReady = function () {
     }
   }
 
+  // Color por saturacion actual del tramo (calcularSaturacion.js), no por
+  // tipo de ruta - el tipo de ruta se distingue por el patron de trazo
+  // (stroke-dasharray, ver style.css). Umbrales de color ad hoc.
+  function colorDeSaturacion(cargaActual, capacidad) {
+    var resultado = calcularSaturacion(cargaActual, capacidad);
+    if (resultado.factorVelocidad >= 1) return '#4caf50';
+    if (resultado.factorVelocidad >= 0.5) return '#ffb300';
+    return '#e53935';
+  }
+
   function dibujarOverlay() {
     quitarToken();
-    var lineas = overlayEl.querySelectorAll('line');
-    lineas.forEach(function (l) { l.remove(); });
+    var elementosViejos = overlayEl.querySelectorAll('line, text');
+    elementosViejos.forEach(function (el) { el.remove(); });
     rutasDibujadas.forEach(function (r) {
+      var cargaActual = r.tramo.cargaActual || 0;
       var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       line.setAttribute('x1', r.ax);
       line.setAttribute('y1', r.ay);
       line.setAttribute('x2', r.bx);
       line.setAttribute('y2', r.by);
       line.setAttribute('class', 'ruta-' + r.tipoRuta);
-      line.setAttribute('stroke-width', '3');
+      line.setAttribute('stroke-width', '4');
+      line.style.stroke = colorDeSaturacion(cargaActual, r.tramo.capacidad);
       overlayEl.appendChild(line);
+
+      var texto = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      texto.setAttribute('x', (r.ax + r.bx) / 2);
+      texto.setAttribute('y', (r.ay + r.by) / 2 - 4);
+      texto.setAttribute('class', 'etiqueta-saturacion');
+      texto.textContent = cargaActual + '/' + r.tramo.capacidad;
+      overlayEl.appendChild(texto);
+    });
+  }
+
+  function reiniciarCargasRutas() {
+    var vistos = new Set();
+    Object.keys(grafo).forEach(function (origen) {
+      Object.keys(grafo[origen]).forEach(function (destino) {
+        var tramo = grafo[origen][destino];
+        if (!vistos.has(tramo)) {
+          tramo.cargaActual = 0;
+          vistos.add(tramo);
+        }
+      });
     });
   }
 
@@ -411,7 +445,7 @@ window.onCjsReady = function () {
       conectarVertices(grafo, rutaOrigenSeleccionado.vertice, nodoInfo.vertice, tramo);
       var pa = pixelDeVertice(rutaOrigenSeleccionado.vertice);
       var pb = pixelDeVertice(nodoInfo.vertice);
-      rutasDibujadas.push({ ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta });
+      rutasDibujadas.push({ ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta, tramo: tramo });
       dibujarOverlay();
       mostrarMensaje(
         'OK: ' + tipoRuta + ' conectada (' + rutaOrigenSeleccionado.etiqueta + ' <-> ' +
@@ -443,6 +477,13 @@ window.onCjsReady = function () {
     var resumen = [];
     var calendario = calendarioDeTick(tickActual);
     tickActual += 1;
+
+    // La carga de cada tramo representa el trafico de ESTE tick (mismo
+    // criterio que resolverTick.js/resolverTickConTransito.js: reiniciar
+    // todas las cargas al arrancar el tick, antes de que se despachen los
+    // viajes de este ciclo). Sin este reset, la saturacion visual quedaria
+    // acumulada para siempre y nunca bajaria.
+    reiniciarCargasRutas();
 
     // Fase 1: produccion. La agricultura recibe el multiplicador de clima de
     // la estacion actual (Contrato 29: solo afecta agricultura, aplicado
@@ -564,6 +605,7 @@ window.onCjsReady = function () {
       false
     );
     render();
+    dibujarOverlay();
   });
 
   venderProduccionBtn.addEventListener('click', function () {
@@ -638,6 +680,17 @@ window.onCjsReady = function () {
         retirarStockAlmacen(origenInfo.almacen, 'producto', cantidad);
       }
 
+      // Registrar la carga de este despacho en cada tramo del camino, para
+      // que la saturacion visual (color de la linea) refleje el viaje recien
+      // enviado sin esperar al siguiente tick. resolverTickConTransito.js
+      // vuelve a registrar esto mismo en cada avance (reinicia y reacumula),
+      // asi que este registro inicial solo cubre el primer instante visual.
+      for (var iTramo = 0; iTramo < ruta.camino.length - 1; iTramo += 1) {
+        var tramoTramo = grafo[ruta.camino[iTramo]][ruta.camino[iTramo + 1]];
+        registrarCargaTramo(tramoTramo, tipoTrafico, cantidad);
+      }
+      dibujarOverlay();
+
       function entregarEnDestino(entregado) {
         if (destinoInfo && destinoInfo.almacen) {
           var entero = Math.floor(entregado);
@@ -672,6 +725,7 @@ window.onCjsReady = function () {
           if (resultadoTick.llegados.length > 0) {
             clearInterval(intervalId);
             viajeActivo = null;
+            dibujarOverlay();
             var pFinal = pixelDeVertice(verticeDestino);
             dibujarToken(pFinal.x, pFinal.y);
             entregarEnDestino(resultadoTick.llegados[0].entregado);
@@ -682,6 +736,7 @@ window.onCjsReady = function () {
           viajeEstado = resultadoTick.enTransito[0];
           var fraccion = (ticksTotal - viajeEstado.ticksRestantes) / ticksTotal;
           var posicion = posicionEnCamino(ruta.camino, fraccion);
+          dibujarOverlay();
           dibujarToken(posicion.x, posicion.y);
         } catch (errorTick) {
           clearInterval(intervalId);

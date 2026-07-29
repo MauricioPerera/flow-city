@@ -51,10 +51,14 @@ h1 {
   pointer-events: none;
 }
 
-.ruta-carretera { stroke: #ffd54f; }
-.ruta-ferrocarril { stroke: #bdbdbd; }
-.ruta-maritima { stroke: #4fc3f7; }
-.ruta-subte { stroke: #ce93d8; }
+/* El color de cada linea de ruta se fija en JS segun saturacion actual
+   (calcularSaturacion.js); el tipo de ruta se distingue por el trazo. */
+.ruta-carretera { stroke-dasharray: none; }
+.ruta-ferrocarril { stroke-dasharray: 8,3; }
+.ruta-maritima { stroke-dasharray: 3,5; }
+.ruta-subte { stroke-dasharray: 1,4; }
+
+.etiqueta-saturacion { fill: #fff; font-size: 10px; text-anchor: middle; pointer-events: none; }
 
 .celda.origen-ruta { outline: 2px solid #ffd54f; outline-offset: -2px; }
 
