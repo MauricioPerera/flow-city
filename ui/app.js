@@ -113,8 +113,19 @@ window.onCjsReady = function () {
   };
   var COSTO_MANTENIMIENTO_CASA = 1; // ad hoc, igual para S/M/L en esta primera pasada
 
+  // Condiciones de fin de partida (decision del usuario, no de src/): no hay
+  // victoria fija - el objetivo es sobrevivir el mayor tiempo posible, asi
+  // que el puntaje es tickActual (dias sobrevividos), mostrado siempre.
+  // Derrota (ambas condiciones, la que ocurra primero): poblacion en 0
+  // habiendo tenido vivienda construida, o saldo negativo UMBRAL_QUIEBRA
+  // ticks SEGUIDOS (se reinicia el contador apenas el saldo vuelve a ser
+  // >= 0, no es acumulativo). UMBRAL_QUIEBRA ad hoc.
+  var UMBRAL_QUIEBRA = 5;
+
   var tickActual = 0;
   var tesoreria = crearTesoreria(SALDO_INICIAL);
+  var ticksSaldoNegativoConsecutivos = 0;
+  var juegoTerminado = false;
 
   // Acumulador de fraccion de poblacion: calcularCrecimientoPoblacion.js
   // devuelve un numero crudo sin redondear; truncarlo a entero CADA tick
@@ -158,11 +169,14 @@ window.onCjsReady = function () {
   var venderProduccionBtn = document.getElementById('venderProduccion');
   var guardarPartidaBtn = document.getElementById('guardarPartida');
   var cargarPartidaBtn = document.getElementById('cargarPartida');
+  var reiniciarPartidaBtn = document.getElementById('reiniciarPartida');
   var CLAVE_GUARDADO = 'flowCityGuardado';
   var saldoEl = document.getElementById('saldo');
   var costoConstruccionEl = document.getElementById('costoConstruccion');
   var poblacionTotalEl = document.getElementById('poblacionTotal');
   var calendarioEl = document.getElementById('calendario');
+  var puntajeEl = document.getElementById('puntaje');
+  var gameOverEl = document.getElementById('gameOver');
 
   gridEl.style.gridTemplateColumns = 'repeat(' + ANCHO + ', ' + TAM + 'px)';
   overlayEl.setAttribute('width', ANCHO * TAM);
@@ -239,6 +253,65 @@ window.onCjsReady = function () {
     calendarioEl.textContent = 'Día ' + calendario.dia + ' (año ' + calendario.anio + ', mes ' +
       calendario.mesDelAnio + ', semana ' + calendario.semanaDelMes + ', ' + calendario.diaDeSemana +
       (calendario.esLaboral ? ', laboral' : ', fin de semana') + ') — ' + calendario.estacion;
+  }
+
+  function renderPuntaje() {
+    puntajeEl.textContent = 'Sobrevividos: ' + tickActual + (tickActual === 1 ? ' día' : ' días');
+  }
+
+  function habilitarBotones(habilitado) {
+    avanzarTickProduccionBtn.disabled = !habilitado;
+    venderProduccionBtn.disabled = !habilitado;
+    enviarViajeBtn.disabled = !habilitado;
+  }
+
+  function mostrarGameOver(motivo, dia) {
+    juegoTerminado = true;
+    gameOverEl.textContent = 'GAME OVER: ' + motivo + '. Sobreviviste ' + dia + (dia === 1 ? ' día' : ' días') + '.';
+    gameOverEl.style.display = '';
+    habilitarBotones(false);
+  }
+
+  function ocultarGameOver() {
+    gameOverEl.style.display = 'none';
+    gameOverEl.textContent = '';
+  }
+
+  function crearGridInicial() {
+    var g = crearGrid(ANCHO, ALTO, 'neutra');
+    for (var x = 0; x < ANCHO; x += 1) {
+      for (var y = 0; y <= 1; y += 1) obtenerCelda(g, x, y).terreno = 'verde';
+      for (var y2 = 2; y2 <= 3; y2 += 1) obtenerCelda(g, x, y2).terreno = 'elevada';
+      for (var y3 = 4; y3 <= 5; y3 += 1) obtenerCelda(g, x, y3).terreno = 'agua_profunda';
+    }
+    return g;
+  }
+
+  function reiniciarPartida() {
+    grid = crearGridInicial();
+    tickActual = 0;
+    tesoreria = crearTesoreria(SALDO_INICIAL);
+    ticksSaldoNegativoConsecutivos = 0;
+    juegoTerminado = false;
+    poblacionFraccionAcumulada = 0;
+    grafo = {};
+    nodosColocados = [];
+    rutasDibujadas = [];
+    rutaOrigenSeleccionado = null;
+    if (viajeActivo) {
+      clearInterval(viajeActivo.intervalId);
+      viajeActivo = null;
+    }
+    actualizarSelectsViaje();
+    habilitarBotones(true);
+    ocultarGameOver();
+    render();
+    dibujarOverlay();
+    renderSaldo();
+    renderCosto();
+    renderPoblacion();
+    renderCalendario(calendarioDeTick(tickActual));
+    renderPuntaje();
   }
 
   function nodoPorVertice(vertice) {
@@ -474,6 +547,7 @@ window.onCjsReady = function () {
   }
 
   gridEl.addEventListener('click', function (evento) {
+    if (juegoTerminado) return;
     var celdaEl = evento.target.closest('.celda');
     if (!celdaEl) return;
     var x = Number(celdaEl.dataset.x);
@@ -488,6 +562,7 @@ window.onCjsReady = function () {
   });
 
   avanzarTickProduccionBtn.addEventListener('click', function () {
+    if (juegoTerminado) return;
     var resumen = [];
     var calendario = calendarioDeTick(tickActual);
     tickActual += 1;
@@ -615,9 +690,27 @@ window.onCjsReady = function () {
       if (totalMantenimiento > 0) resumen.push('mantenimiento: -$' + totalMantenimiento.toFixed(2));
     }
 
+    // Fase 4: condiciones de fin de partida, verificadas con el estado ya
+    // actualizado de este tick. No hay victoria fija - el objetivo es
+    // sobrevivir el mayor tiempo posible (puntaje = tickActual). Derrota
+    // (la que ocurra primero): poblacion en 0 habiendo tenido vivienda
+    // construida, o saldo negativo UMBRAL_QUIEBRA ticks SEGUIDOS.
+    if (tesoreria.saldo < 0) {
+      ticksSaldoNegativoConsecutivos += 1;
+    } else {
+      ticksSaldoNegativoConsecutivos = 0;
+    }
+    var hayVivienda = nodosColocados.some(function (info) { return info.poblacion !== undefined; });
+    if (hayVivienda && poblacionTotal() === 0) {
+      mostrarGameOver('la poblacion llego a 0', calendario.dia);
+    } else if (ticksSaldoNegativoConsecutivos >= UMBRAL_QUIEBRA) {
+      mostrarGameOver('quiebra prolongada (' + UMBRAL_QUIEBRA + ' dias seguidos en rojo)', calendario.dia);
+    }
+
     renderSaldo();
     renderPoblacion();
     renderCalendario(calendario);
+    renderPuntaje();
     mostrarMensaje(
       resumen.length > 0 ? 'Tick de produccion -> ' + resumen.join(' | ') : 'No hay nodos productivos colocados',
       false
@@ -627,6 +720,7 @@ window.onCjsReady = function () {
   });
 
   venderProduccionBtn.addEventListener('click', function () {
+    if (juegoTerminado) return;
     // Comercio como accion explicita del jugador (no automatica dentro del
     // tick): asi el stock puede acumularse y tambien enviarse por ruta a
     // otro nodo (modo 'viaje') antes de decidir vender. Mismo patron de
@@ -647,6 +741,11 @@ window.onCjsReady = function () {
     render();
   });
 
+  reiniciarPartidaBtn.addEventListener('click', function () {
+    reiniciarPartida();
+    mostrarMensaje('Partida nueva iniciada', false);
+  });
+
   guardarPartidaBtn.addEventListener('click', function () {
     // Todo el estado es objetos planos (grid/nodosColocados/grafo/tramos),
     // serializa directo a JSON. La unica referencia compartida real es
@@ -658,6 +757,7 @@ window.onCjsReady = function () {
       version: 1,
       tickActual: tickActual,
       poblacionFraccionAcumulada: poblacionFraccionAcumulada,
+      ticksSaldoNegativoConsecutivos: ticksSaldoNegativoConsecutivos,
       tesoreria: tesoreria,
       grid: grid,
       nodosColocados: nodosColocados,
@@ -688,6 +788,7 @@ window.onCjsReady = function () {
       }
       tickActual = snapshot.tickActual;
       poblacionFraccionAcumulada = snapshot.poblacionFraccionAcumulada;
+      ticksSaldoNegativoConsecutivos = snapshot.ticksSaldoNegativoConsecutivos || 0;
       tesoreria = snapshot.tesoreria;
       grid = snapshot.grid;
       nodosColocados = snapshot.nodosColocados;
@@ -699,6 +800,8 @@ window.onCjsReady = function () {
         };
       });
       rutaOrigenSeleccionado = null;
+      ocultarGameOver();
+      habilitarBotones(true);
       actualizarSelectsViaje();
       render();
       dibujarOverlay();
@@ -706,6 +809,7 @@ window.onCjsReady = function () {
       renderCosto();
       renderPoblacion();
       renderCalendario(calendarioDeTick(tickActual));
+      renderPuntaje();
       mostrarMensaje('OK: partida cargada (tick ' + tickActual + ')', false);
     } catch (error) {
       mostrarMensaje('Error al cargar: ' + error.message, true);
@@ -713,6 +817,7 @@ window.onCjsReady = function () {
   });
 
   enviarViajeBtn.addEventListener('click', function () {
+    if (juegoTerminado) return;
     if (viajeActivo) {
       mostrarMensaje('Ya hay un viaje en transito, esperá a que llegue', true);
       return;
@@ -841,4 +946,5 @@ window.onCjsReady = function () {
   renderCosto();
   renderPoblacion();
   renderCalendario(calendarioDeTick(tickActual));
+  renderPuntaje();
 };

@@ -30,6 +30,16 @@ h1 {
 .costo { color: #bdbdbd; font-size: 13px; }
 .poblacion { font-weight: bold; color: #81d4fa; }
 .calendario { color: #ce93d8; font-size: 13px; }
+.puntaje { font-weight: bold; color: #a5d6a7; }
+
+.gameover {
+  background: #b71c1c;
+  color: #fff;
+  font-weight: bold;
+  padding: 10px;
+  margin-bottom: 12px;
+  border-radius: 4px;
+}
 
 #gridWrap {
   position: relative;
