@@ -192,6 +192,15 @@ window.onCjsReady = function () {
     return { x: p.x * TAM, y: p.y * TAM };
   }
 
+  // Traza el segmento a->b en L (horizontal y despues vertical), no en
+  // diagonal recta: los vertices ya son intersecciones del grid (multiplos
+  // de TAM), asi que un camino horizontal+vertical corre exactamente sobre
+  // las aristas de las celdas en vez de cortar por arriba de otras
+  // construcciones. Devuelve los 3 puntos del quiebre (a, esquina, b).
+  function segmentoOrtogonal(a, b) {
+    return [a, { x: b.x, y: a.y }, b];
+  }
+
   function crearNodoDeMuestra(categoria) {
     if (categoriasReceta[categoria]) {
       return crearNodoProductivo(categoria, 1, 1, null);
@@ -384,23 +393,23 @@ window.onCjsReady = function () {
 
   function dibujarOverlay() {
     quitarToken();
-    var elementosViejos = overlayEl.querySelectorAll('line, text');
+    var elementosViejos = overlayEl.querySelectorAll('polyline, text');
     elementosViejos.forEach(function (el) { el.remove(); });
     rutasDibujadas.forEach(function (r) {
       var cargaActual = r.tramo.cargaActual || 0;
-      var line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-      line.setAttribute('x1', r.ax);
-      line.setAttribute('y1', r.ay);
-      line.setAttribute('x2', r.bx);
-      line.setAttribute('y2', r.by);
-      line.setAttribute('class', 'ruta-' + r.tipoRuta);
-      line.setAttribute('stroke-width', '4');
-      line.style.stroke = colorDeSaturacion(cargaActual, r.tramo.capacidad);
-      overlayEl.appendChild(line);
+      var puntos = segmentoOrtogonal({ x: r.ax, y: r.ay }, { x: r.bx, y: r.by });
+      var polylinea = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      polylinea.setAttribute('points', puntos.map(function (p) { return p.x + ',' + p.y; }).join(' '));
+      polylinea.setAttribute('fill', 'none');
+      polylinea.setAttribute('class', 'ruta-' + r.tipoRuta);
+      polylinea.setAttribute('stroke-width', '4');
+      polylinea.style.stroke = colorDeSaturacion(cargaActual, r.tramo.capacidad);
+      overlayEl.appendChild(polylinea);
 
+      var medio = puntos[1]; // esquina del quiebre, punto medio visual del recorrido
       var texto = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-      texto.setAttribute('x', (r.ax + r.bx) / 2);
-      texto.setAttribute('y', (r.ay + r.by) / 2 - 4);
+      texto.setAttribute('x', medio.x);
+      texto.setAttribute('y', medio.y - 4);
       texto.setAttribute('class', 'etiqueta-saturacion');
       texto.textContent = cargaActual + '/' + r.tramo.capacidad;
       overlayEl.appendChild(texto);
@@ -435,8 +444,23 @@ window.onCjsReady = function () {
     if (existente) existente.remove();
   }
 
+  function puntosDelCamino(camino) {
+    // Expande TODO el camino (lista de vertices) a una polilinea ortogonal:
+    // cada tramo entre dos vertices consecutivos se traza en L, igual que
+    // dibujarOverlay, para que el token de "Enviar viaje" se mueva sobre las
+    // mismas aristas del grid que la linea de la ruta, no en diagonal.
+    var puntos = [pixelDeVertice(camino[0])];
+    for (var i = 0; i < camino.length - 1; i += 1) {
+      var a = pixelDeVertice(camino[i]);
+      var b = pixelDeVertice(camino[i + 1]);
+      var subtramo = segmentoOrtogonal(a, b);
+      puntos.push(subtramo[1], subtramo[2]);
+    }
+    return puntos;
+  }
+
   function posicionEnCamino(camino, fraccion) {
-    var puntos = camino.map(pixelDeVertice);
+    var puntos = puntosDelCamino(camino);
     var segmentos = puntos.length - 1;
     if (segmentos <= 0) return puntos[0];
     var posGlobal = Math.max(0, Math.min(1, fraccion)) * segmentos;
