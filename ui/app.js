@@ -210,6 +210,45 @@ window.onCjsReady = function () {
     return [a, { x: b.x, y: a.y }, b];
   }
 
+  // 'carretera' debe respetar el terreno: no puede cruzar agua abierta por
+  // el medio (pedido del usuario). No se reusa rutaCruzaTerrenoValido.js de
+  // src/ (Contrato 39) porque esa funcion solo mira el terreno de los DOS
+  // EXTREMOS - en esta UI el extremo puede ser legitimamente agua_profunda
+  // si es un nodo 'puerto' o 'pesca' (ambos la requieren para construirse),
+  // y aplicar esa regla ahi rompería la conexion carretera->puerto que ya
+  // se prueba en un playtest real. En cambio se revisa el CAMINO: se
+  // excluye el primer y ultimo paso de cada segmento (adyacentes a los
+  // nodos conectados, donde tocar agua es esperado si son puerto/pesca) y
+  // se bloquea solo si algun paso INTERIOR tiene agua_profunda a ambos
+  // lados (agua abierta de verdad, no la orilla de un puerto).
+  function segmentoTerrestreCruzaAguaAbierta(p1, p2) {
+    if (p1.y === p2.y) {
+      var filaBorde = p1.y / TAM;
+      var xIni = Math.min(p1.x, p2.x) / TAM;
+      var xFin = Math.max(p1.x, p2.x) / TAM;
+      for (var cx = xIni + 1; cx < xFin - 1; cx += 1) {
+        var arriba = filaBorde - 1 >= 0 ? obtenerCelda(grid, cx, filaBorde - 1).terreno : null;
+        var abajo = filaBorde < ALTO ? obtenerCelda(grid, cx, filaBorde).terreno : null;
+        if (arriba === 'agua_profunda' && abajo === 'agua_profunda') return true;
+      }
+    } else if (p1.x === p2.x) {
+      var colBorde = p1.x / TAM;
+      var yIni = Math.min(p1.y, p2.y) / TAM;
+      var yFin = Math.max(p1.y, p2.y) / TAM;
+      for (var cy = yIni + 1; cy < yFin - 1; cy += 1) {
+        var izq = colBorde - 1 >= 0 ? obtenerCelda(grid, colBorde - 1, cy).terreno : null;
+        var der = colBorde < ANCHO ? obtenerCelda(grid, colBorde, cy).terreno : null;
+        if (izq === 'agua_profunda' && der === 'agua_profunda') return true;
+      }
+    }
+    return false;
+  }
+
+  function rutaCarreteraCruzaAguaAbierta(a, b) {
+    var puntos = segmentoOrtogonal(a, b);
+    return segmentoTerrestreCruzaAguaAbierta(puntos[0], puntos[1]) || segmentoTerrestreCruzaAguaAbierta(puntos[1], puntos[2]);
+  }
+
   function crearNodoDeMuestra(categoria) {
     if (categoriasReceta[categoria]) {
       return crearNodoProductivo(categoria, 1, 1, null);
@@ -569,14 +608,17 @@ window.onCjsReady = function () {
       if (tipoRuta === 'maritima' && (rutaOrigenSeleccionado.categoria !== CATEGORIA_PUERTO || nodoInfo.categoria !== CATEGORIA_PUERTO)) {
         throw new Error('las rutas maritimas requieren un puerto en cada extremo');
       }
+      var pa = pixelDeVertice(rutaOrigenSeleccionado.vertice);
+      var pb = pixelDeVertice(nodoInfo.vertice);
+      if (tipoRuta === 'carretera' && rutaCarreteraCruzaAguaAbierta(pa, pb)) {
+        throw new Error('la carretera cruza agua abierta - usa una ruta maritima con puertos, o ferrocarril/subte');
+      }
       // Longitud = distancia Manhattan entre anclas de celda (decision ad hoc,
       // no hay ninguna nocion de "distancia" impuesta por src/ para esto).
       var longitud = Math.abs(rutaOrigenSeleccionado.x - x) + Math.abs(rutaOrigenSeleccionado.y - y);
       if (longitud <= 0) longitud = 1;
       var tramo = crearTramo(tipoRuta, capacidad, longitud, undefined);
       conectarVertices(grafo, rutaOrigenSeleccionado.vertice, nodoInfo.vertice, tramo);
-      var pa = pixelDeVertice(rutaOrigenSeleccionado.vertice);
-      var pb = pixelDeVertice(nodoInfo.vertice);
       rutasDibujadas.push({
         ax: pa.x, ay: pa.y, bx: pb.x, by: pb.y, tipoRuta: tipoRuta, tramo: tramo,
         verticeA: rutaOrigenSeleccionado.vertice, verticeB: nodoInfo.vertice,
